@@ -1,0 +1,18 @@
+{
+  "packages": {
+    ".": {
+      "changelog-path": "CHANGELOG.md",
+      "release-type": "simple",
+      "bump-minor-pre-major": false,
+      "bump-patch-for-minor-pre-major": false,
+      "draft": true,
+      "prerelease": false,
+      "skip-github-release": false,
+      "force-tag-creation": true
+    }
+  },
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "pull-request-title-pattern": "release(${branch}): ${version}",
+  "pull-request-header": "### Automated Release Process\n\nNew commits conforming to the [Conventional Commits specification](https://www.conventionalcommits.org/en/) have been registered since the preceding release.\n\nThe following changelog details the specific modifications applied to the codebase:\n\n",
+  "pull-request-footer": "### Validation Required\n\nIf the current changes are approved for publication, please authorize this request by squashing and merging this pull request."
+}
