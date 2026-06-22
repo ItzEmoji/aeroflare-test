@@ -5,14 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -403,6 +402,8 @@ func (ps *ProxyServer) Handler(w http.ResponseWriter, r *http.Request) {
 			ps.serveNixCacheInfo(w)
 		case path == "/public-key":
 			ps.servePublicKey(w)
+		case path == "/api/public-key":
+			ps.serveApiPublicKey(w)
 		case path == "/_status":
 			ps.serveStatus(w)
 		case strings.HasSuffix(path, ".narinfo"):
@@ -458,6 +459,24 @@ func (ps *ProxyServer) servePublicKey(w http.ResponseWriter) {
 		_, _ = w.Write(data)
 	} else {
 		http.Error(w, "No public key configured", http.StatusNotFound)
+	}
+}
+
+func (ps *ProxyServer) serveApiPublicKey(w http.ResponseWriter) {
+	ps.CacheIndex.mu.RLock()
+	annotations := ps.CacheIndex.ManifestAnnotations
+	ps.CacheIndex.mu.RUnlock()
+
+	pubKey := annotations["public-key"]
+	if pubKey != "" {
+		pubKey = strings.TrimSpace(pubKey) + "\n"
+		data := []byte(pubKey)
+		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(data)
+	} else {
+		http.Error(w, "No public key configured in manifest", http.StatusNotFound)
 	}
 }
 
@@ -590,9 +609,7 @@ func (ps *ProxyServer) serveNarInfo(w http.ResponseWriter, r *http.Request, path
 	}
 
 	upstreamPath := fmt.Sprintf("/%s.narinfo", storeHash)
-	if len(ps.UpstreamCaches) > 0 {
-		upstreamURL := fmt.Sprintf("%s%s", strings.TrimSuffix(ps.UpstreamCaches[0], "/"), upstreamPath)
-		http.Redirect(w, r, upstreamURL, http.StatusFound)
+	if ps.proxyUpstream(w, r, upstreamPath) {
 		return
 	}
 
@@ -633,9 +650,7 @@ func (ps *ProxyServer) serveNar(w http.ResponseWriter, r *http.Request, path str
 		fmt.Fprintf(os.Stderr, "[aeroflare proxy] Warning: failed to stream blob %s from GHCR: %v. Trying upstream...\n", digest, err)
 	}
 
-	if len(ps.UpstreamCaches) > 0 {
-		upstreamURL := fmt.Sprintf("%s%s", strings.TrimSuffix(ps.UpstreamCaches[0], "/"), path)
-		http.Redirect(w, r, upstreamURL, http.StatusFound)
+	if ps.proxyUpstream(w, r, path) {
 		return
 	}
 
@@ -683,7 +698,34 @@ func (ps *ProxyServer) streamBlob(w http.ResponseWriter, digest string, contentT
 	return nil
 }
 
+func (ps *ProxyServer) proxyUpstream(w http.ResponseWriter, r *http.Request, upstreamPath string) bool {
+	if len(ps.UpstreamCaches) == 0 {
+		return false
+	}
+	upstreamURL := fmt.Sprintf("%s%s", strings.TrimSuffix(ps.UpstreamCaches[0], "/"), upstreamPath)
+	req, err := http.NewRequest(r.Method, upstreamURL, nil)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("User-Agent", "aeroflare/1.0")
+	resp, err := ps.HttpClient.Do(req)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = resp.Body.Close() }()
 
+	for k, vv := range resp.Header {
+		for _, v := range vv {
+			w.Header().Add(k, v)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+	_, err = io.Copy(w, resp.Body)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[aeroflare proxy] Warning: stream interrupted for upstream path %s: %v\n", upstreamPath, err)
+	}
+	return true
+}
 
 func (ps *ProxyServer) fetchWorkerBytes(path string) ([]byte, error) {
 	if ps.WorkerURL == "" {
@@ -788,7 +830,7 @@ func BootstrapConfigWithAnnotations(registry, repository string, tokenMgr *Token
 }
 
 // StartProxy starts the proxy HTTP server on the configured address.
-func StartProxy(port int, listenAddr string, registry string, repository string, indexDir string, indexTTLSeconds int, upstreams []string, githubToken string, workerURL string) error {
+func StartProxy(ctx context.Context, port int, listenAddr string, registry string, repository string, indexDir string, indexTTLSeconds int, upstreams []string, githubToken string, workerURL string) (int, error) {
 	tokenMgr := NewTokenManager(registry, repository, githubToken)
 
 	var bootstrappedKey string
@@ -858,16 +900,18 @@ func StartProxy(port int, listenAddr string, registry string, repository string,
 	mux.HandleFunc("/", ps.Handler)
 
 	addr := fmt.Sprintf("%s:%d", listenAddr, port)
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return 0, err
+	}
+	actualPort := listener.Addr().(*net.TCPAddr).Port
+
 	server := &http.Server{
-		Addr:    addr,
 		Handler: mux,
 	}
 
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-
 	go func() {
-		fmt.Fprintf(os.Stderr, "[aeroflare proxy] Starting proxy server on http://%s\n", addr)
+		fmt.Fprintf(os.Stderr, "[aeroflare proxy] Starting proxy server on http://%s:%d\n", listenAddr, actualPort)
 		fmt.Fprintf(os.Stderr, "  Repo: %s\n", repository)
 		fmt.Fprintf(os.Stderr, "  Upstream: %s\n", strings.Join(upstreams, ", "))
 		if workerURL != "" {
@@ -876,16 +920,18 @@ func StartProxy(port int, listenAddr string, registry string, repository string,
 			fmt.Fprintf(os.Stderr, "  Index TTL: %s\n", ttl)
 		}
 
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
 			fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
-			os.Exit(1)
 		}
 	}()
 
-	<-stop
-	fmt.Fprintf(os.Stderr, "\n[aeroflare proxy] Shutting down...\n")
+	go func() {
+		<-ctx.Done()
+		fmt.Fprintf(os.Stderr, "\n[aeroflare proxy] Shutting down...\n")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdownCtx)
+	}()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	return server.Shutdown(ctx)
+	return actualPort, nil
 }
