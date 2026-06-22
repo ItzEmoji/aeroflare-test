@@ -74,30 +74,30 @@ type RemoteConfig struct {
 
 // TokenManager handles retrieving and caching the OCI Bearer token.
 type TokenManager struct {
-	registry    string
-	repository  string
-	githubToken string
-	mu          sync.Mutex
-	token       string
-	expiry      time.Time
+	registry      string
+	repository    string
+	githubToken   string
+	OverrideToken string
+	HttpClient    *http.Client
+	mu            sync.Mutex
+	token         string
+	expiry        time.Time
 }
 
 // NewTokenManager creates a new OCI token manager.
 func NewTokenManager(registry, repository, githubToken string) *TokenManager {
 	return &TokenManager{
-		registry:    registry,
-		repository:  repository,
-		githubToken: githubToken,
+		registry:      registry,
+		repository:    repository,
+		githubToken:   githubToken,
+		OverrideToken: directTokenFromEnv(),
 	}
 }
 
 // GetToken returns a valid OCI Bearer token, performing token exchange if necessary.
 func (tm *TokenManager) GetToken() (string, error) {
-	if t := os.Getenv("oci_token"); t != "" && !strings.HasPrefix(t, "ghp_") && !strings.HasPrefix(t, "github_pat_") {
-		return t, nil
-	}
-	if t := os.Getenv("NIXCACHE_TOKEN"); t != "" && !strings.HasPrefix(t, "ghp_") && !strings.HasPrefix(t, "github_pat_") {
-		return t, nil
+	if tm.OverrideToken != "" {
+		return tm.OverrideToken, nil
 	}
 
 	tm.mu.Lock()
@@ -117,6 +117,15 @@ func (tm *TokenManager) GetToken() (string, error) {
 	return tm.token, nil
 }
 
+func directTokenFromEnv() string {
+	for _, key := range []string{"oci_token", "NIXCACHE_TOKEN"} {
+		if t := os.Getenv(key); t != "" && !strings.HasPrefix(t, "ghp_") && !strings.HasPrefix(t, "github_pat_") {
+			return t
+		}
+	}
+	return ""
+}
+
 func (tm *TokenManager) fetchToken() (string, error) {
 	proto := GetProtocol(tm.registry)
 	query := url.Values{}
@@ -129,7 +138,10 @@ func (tm *TokenManager) fetchToken() (string, error) {
 		RawQuery: query.Encode(),
 	}).String()
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := tm.HttpClient
+	if client == nil {
+		client = &http.Client{Timeout: 10 * time.Second}
+	}
 
 	if tm.githubToken != "" {
 		req, err := http.NewRequest("GET", tokenURL, nil)
@@ -162,8 +174,7 @@ func (tm *TokenManager) fetchToken() (string, error) {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("failed to fetch token (HTTP %d): %s", resp.StatusCode, string(bodyBytes))
+		return "", fmt.Errorf("failed to fetch token (HTTP %d): %s", resp.StatusCode, readErrorBody(resp.Body))
 	}
 
 	token, err := decodeTokenResponse(resp.Body)
@@ -189,6 +200,11 @@ func decodeTokenResponse(r io.Reader) (string, error) {
 		return result.Token, nil
 	}
 	return result.AccessToken, nil
+}
+
+func readErrorBody(r io.Reader) string {
+	bodyBytes, _ := io.ReadAll(io.LimitReader(r, 1024))
+	return string(bodyBytes)
 }
 
 // CacheIndex handles loading, refreshing, and querying the cache index.
@@ -363,12 +379,25 @@ func narBasenameFromNarinfo(narinfo string) string {
 		} else if beforeQuery, _, ok := strings.Cut(urlVal, "?"); ok {
 			urlVal = beforeQuery
 		}
-		basename := path.Base(strings.TrimRight(urlVal, "/"))
-		if basename != "." && basename != "/" {
+		if hasParentPathSegment(urlVal) {
+			continue
+		}
+		cleanPath := path.Clean(urlVal)
+		basename := path.Base(strings.TrimRight(cleanPath, "/"))
+		if basename != "." && basename != "/" && !strings.Contains(basename, "/") && strings.Contains(basename, ".nar") {
 			return basename
 		}
 	}
 	return ""
+}
+
+func hasParentPathSegment(urlPath string) bool {
+	for _, segment := range strings.Split(urlPath, "/") {
+		if segment == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 func (ci *CacheIndex) refresh() error {
@@ -395,19 +424,20 @@ func (ci *CacheIndex) refresh() error {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("manifest HTTP %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
 	var manifest IndexManifest
-	if err := json.NewDecoder(resp.Body).Decode(&manifest); err != nil {
+	if err := func() error {
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("manifest HTTP %d: %s", resp.StatusCode, readErrorBody(resp.Body))
+		}
+
+		return json.NewDecoder(resp.Body).Decode(&manifest)
+	}(); err != nil {
 		return err
 	}
 
@@ -417,7 +447,7 @@ func (ci *CacheIndex) refresh() error {
 
 	// In r2 mode the index blob is not needed: narinfo is served from R2 and
 	// NAR digests are parsed from the R2 narinfo on demand.
-	if manifest.Annotations != nil && manifest.Annotations["index-type"] == "r2" {
+	if manifest.Annotations != nil && strings.EqualFold(strings.TrimSpace(manifest.Annotations["index-type"]), "r2") {
 		ci.mu.Lock()
 		// Clear any stale in-memory index from a previous json-mode run.
 		ci.Data = &CacheIndexData{Entries: make(map[string]IndexEntry)}
@@ -445,15 +475,14 @@ func (ci *CacheIndex) refresh() error {
 	}
 
 	blobClient := &http.Client{Timeout: 120 * time.Second}
-	resp, err = blobClient.Do(req)
+	resp, err := blobClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("blob HTTP %d: %s", resp.StatusCode, string(bodyBytes))
+		return fmt.Errorf("blob HTTP %d: %s", resp.StatusCode, readErrorBody(resp.Body))
 	}
 
 	dataBytes, err := io.ReadAll(resp.Body)
@@ -471,7 +500,11 @@ func (ci *CacheIndex) refresh() error {
 			ci.CacheFileName = "cache-index.json"
 		}
 		indexFile := filepath.Join(ci.IndexDir, ci.CacheFileName)
-		_ = os.WriteFile(indexFile, dataBytes, 0644)
+		if err := os.WriteFile(indexFile, dataBytes, 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "[aeroflare proxy] Warning: failed to write local index cache: %v\n", err)
+		}
+	} else {
+		fmt.Fprintf(os.Stderr, "[aeroflare proxy] Warning: failed to create local index cache directory: %v\n", err)
 	}
 
 	ci.updateInMemory(&indexData)
@@ -593,17 +626,9 @@ func (ps *ProxyServer) serveStatus(w http.ResponseWriter) {
 		"upstream":        ps.UpstreamCaches,
 	}
 
-	ps.CacheIndex.mu.RLock()
-	annotations := ps.CacheIndex.ManifestAnnotations
-	ps.CacheIndex.mu.RUnlock()
-
-	if annotations["index-type"] == "r2" || annotations["public-r2-url"] != "" || annotations["aeroflare.r2.public_url"] != "" {
-		publicURL := annotations["public-r2-url"]
-		if publicURL == "" {
-			publicURL = annotations["aeroflare.r2.public_url"]
-		}
+	if ps.CacheIndex.IsR2() {
 		status["r2_enabled"] = true
-		status["r2_public_url"] = publicURL
+		status["r2_public_url"] = ps.CacheIndex.PublicR2URL()
 	} else {
 		status["r2_enabled"] = false
 	}
@@ -708,6 +733,8 @@ func narContentType(narBasename string) string {
 		return "application/x-xz"
 	case strings.HasSuffix(narBasename, ".zst"):
 		return "application/zstd"
+	case strings.HasSuffix(narBasename, ".lz4"):
+		return "application/x-lz4"
 	default:
 		return "application/x-nix-nar"
 	}
@@ -811,8 +838,7 @@ func (ps *ProxyServer) streamBlob(w http.ResponseWriter, r *http.Request, digest
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusNotModified {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("GHCR blob download HTTP %d: %s", resp.StatusCode, string(bodyBytes))
+		return fmt.Errorf("GHCR blob download HTTP %d: %s", resp.StatusCode, readErrorBody(resp.Body))
 	}
 
 	w.Header().Set("Content-Type", contentType)
@@ -968,7 +994,17 @@ func BootstrapConfigWithAnnotations(registry, repository string, tokenMgr *Token
 
 // StartProxy starts the proxy HTTP server on the configured address.
 func StartProxy(ctx context.Context, port int, listenAddr string, registry string, repository string, indexDir string, cacheFileName string, indexTTLSeconds int, upstreams []string, githubToken string) (int, error) {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConns = 100
+	transport.MaxIdleConnsPerHost = 100
+	transport.IdleConnTimeout = 90 * time.Second
+
+	shortClient := &http.Client{
+		Transport: transport,
+		Timeout:   10 * time.Second,
+	}
 	tokenMgr := NewTokenManager(registry, repository, githubToken)
+	tokenMgr.HttpClient = shortClient
 
 	if cacheFileName == "" {
 		cacheFileName = "cache-index.json"
@@ -991,11 +1027,6 @@ func StartProxy(ctx context.Context, port int, listenAddr string, registry strin
 		_, _ = cacheIndex.Get()
 	}()
 
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 100
-	transport.IdleConnTimeout = 90 * time.Second
-
 	ps := &ProxyServer{
 		Port:           port,
 		ListenAddr:     listenAddr,
@@ -1008,10 +1039,7 @@ func StartProxy(ctx context.Context, port int, listenAddr string, registry strin
 			Transport: transport,
 			Timeout:   30 * time.Minute,
 		},
-		HttpShortClient: &http.Client{
-			Transport: transport,
-			Timeout:   10 * time.Second,
-		},
+		HttpShortClient: shortClient,
 	}
 
 	mux := http.NewServeMux()

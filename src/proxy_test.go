@@ -541,6 +541,12 @@ func TestProxyServer_ServeNar_BlobStream(t *testing.T) {
 	}
 }
 
+func TestNarContentType_Lz4(t *testing.T) {
+	if ct := narContentType("cached.nar.lz4"); ct != "application/x-lz4" {
+		t.Errorf("Expected application/x-lz4, got %s", ct)
+	}
+}
+
 func TestProxyServer_ServeNar_BlobRange(t *testing.T) {
 	mockRegistry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/token" {
@@ -880,6 +886,26 @@ func TestCacheIndex_UpdateInMemory_NarLookup_AbsoluteURLWithQuery(t *testing.T) 
 	}
 }
 
+func TestCacheIndex_UpdateInMemory_NarLookup_RejectsParentPathSegments(t *testing.T) {
+	ci := &CacheIndex{
+		LastFetch: time.Now(),
+		IndexTTL:  5 * time.Minute,
+	}
+	ci.updateInMemory(&CacheIndexData{
+		Entries: map[string]IndexEntry{
+			"hash": {
+				NarInfo:   "StorePath: /nix/store/hash-foo\nURL: /evil/path/../../../etc/passwd\n",
+				NarDigest: "sha256:digest",
+			},
+		},
+	})
+
+	_, narLookups := ci.Get()
+	if len(narLookups) != 0 {
+		t.Errorf("Expected unsafe URL to be ignored, got %#v", narLookups)
+	}
+}
+
 // TestCacheIndex_Get_ReturnsEmptyOnNilData verifies that Get() returns empty non-nil data when index is nil and refresh fails.
 func TestCacheIndex_Get_ReturnsEmptyOnNilData(t *testing.T) {
 	// Token manager pointing at a broken server so refresh will fail
@@ -923,6 +949,21 @@ func TestTokenManager_GetToken_OciTokenEnv(t *testing.T) {
 	}
 	if token != "direct-oci-token-value" {
 		t.Errorf("Expected direct-oci-token-value, got %s", token)
+	}
+}
+
+func TestTokenManager_GetToken_OverrideToken(t *testing.T) {
+	t.Setenv("oci_token", "")
+	t.Setenv("NIXCACHE_TOKEN", "")
+
+	tokenMgr := NewTokenManager("ghcr.io", "test/nix-cache", "")
+	tokenMgr.OverrideToken = "override-token-value"
+	token, err := tokenMgr.GetToken()
+	if err != nil {
+		t.Fatalf("GetToken failed: %v", err)
+	}
+	if token != "override-token-value" {
+		t.Errorf("Expected override-token-value, got %s", token)
 	}
 }
 
