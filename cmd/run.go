@@ -21,13 +21,13 @@ var runCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		registry, repository := network.GetRegistryAndRepository()
 
-		indexDir := getIndexDir(repository)
+		indexDir, cacheFileName := getIndexDirAndFile(repository)
 
 		// Start proxy on random port in background
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		port, err := network.StartProxy(ctx, 0, "127.0.0.1", registry, repository, indexDir, 300, []string{"https://cache.nixos.org"}, getGithubToken(), "")
+		port, err := network.StartProxy(ctx, 0, "127.0.0.1", registry, repository, indexDir, cacheFileName, 300, []string{"https://cache.nixos.org"}, getGithubToken())
 		if err != nil {
 			PrintError(fmt.Sprintf("Failed to start proxy: %v", err))
 			os.Exit(1)

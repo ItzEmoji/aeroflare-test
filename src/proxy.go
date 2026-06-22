@@ -2,6 +2,7 @@ package network
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	narhash "aeroflare/src/prepare/hash"
 )
 
 // GetProtocol determines http vs https protocol (useful for local mock registry tests)
@@ -49,6 +52,7 @@ type CacheIndexData struct {
 }
 
 // RemoteConfig represents the optional dynamic configuration JSON loaded from GHCR.
+// Used by the push/configure pipeline, not by the proxy.
 type RemoteConfig struct {
 	WorkerURL      string   `json:"worker_url"`
 	PublicKey      string   `json:"public_key"`
@@ -159,31 +163,70 @@ func (tm *TokenManager) fetchToken() (string, error) {
 }
 
 // CacheIndex handles loading, refreshing, and querying the cache index.
+//
+// The cache-index OCI manifest is the single source of truth. Its annotations
+// determine the mode via the "index-type" label:
+//   - "r2": narinfo is served from public-r2-url; only the manifest (not the
+//     large index blob) is fetched.
+//   - "json" (or absent): the index blob is downloaded and cached locally so
+//     narinfo and NAR lookups can be served from memory.
 type CacheIndex struct {
 	mu                  sync.RWMutex
 	refreshMu           sync.Mutex
 	Data                *CacheIndexData
-	NarLookups          map[string]string // narBasename -> narDigest
+	NarLookups          map[string]string // narBasename -> narDigest (json mode only)
 	ManifestAnnotations map[string]string
 	LastFetch           time.Time
 	IndexDir            string
+	CacheFileName       string // local cache file name (json mode)
 	IndexTTL            time.Duration
 	TokenMgr            *TokenManager
 	Registry            string
 	Repository          string
 }
 
+// IndexType returns the current manifest's index-type annotation, defaulting to "json".
+func (ci *CacheIndex) IndexType() string {
+	ci.mu.RLock()
+	defer ci.mu.RUnlock()
+	if ci.ManifestAnnotations == nil {
+		return "json"
+	}
+	if t := ci.ManifestAnnotations["index-type"]; t != "" {
+		return t
+	}
+	return "json"
+}
+
+// IsR2 reports whether the cache is configured to serve narinfo from R2.
+func (ci *CacheIndex) IsR2() bool {
+	return ci.IndexType() == "r2"
+}
+
+// PublicR2URL returns the configured public R2 URL for narinfo, or "" if none.
+func (ci *CacheIndex) PublicR2URL() string {
+	ci.mu.RLock()
+	defer ci.mu.RUnlock()
+	if ci.ManifestAnnotations == nil {
+		return ""
+	}
+	if u := ci.ManifestAnnotations["public-r2-url"]; u != "" {
+		return u
+	}
+	return ci.ManifestAnnotations["aeroflare.r2.public_url"]
+}
+
 // Get returns the current cache index data and NAR lookups map, triggering a TTL-based refresh if needed.
 func (ci *CacheIndex) Get() (*CacheIndexData, map[string]string) {
 	ci.mu.RLock()
 	needRefresh := time.Since(ci.LastFetch) > ci.IndexTTL
-	isNil := ci.Data == nil
+	isNil := ci.Data == nil && ci.ManifestAnnotations == nil
 	ci.mu.RUnlock()
 
 	if isNil {
 		ci.refreshMu.Lock()
 		ci.mu.RLock()
-		isNil = ci.Data == nil
+		isNil = ci.Data == nil && ci.ManifestAnnotations == nil
 		ci.mu.RUnlock()
 		if isNil {
 			if err := ci.refresh(); err != nil {
@@ -241,7 +284,10 @@ func (ci *CacheIndex) ForceRefresh() (int, error) {
 }
 
 func (ci *CacheIndex) loadLocal() error {
-	indexFile := filepath.Join(ci.IndexDir, "cache-index.json")
+	if ci.CacheFileName == "" {
+		ci.CacheFileName = "cache-index.json"
+	}
+	indexFile := filepath.Join(ci.IndexDir, ci.CacheFileName)
 	dataBytes, err := os.ReadFile(indexFile)
 	if err != nil {
 		return err
@@ -295,7 +341,7 @@ func (ci *CacheIndex) refresh() error {
 	client := &http.Client{Timeout: 30 * time.Second}
 	proto := GetProtocol(ci.Registry)
 
-	// 1. Fetch manifest
+	// 1. Fetch manifest — this is the single source of truth for annotations.
 	manifestURL := fmt.Sprintf("%s://%s/v2/%s/manifests/cache-index", proto, ci.Registry, ci.Repository)
 	req, err := http.NewRequest("GET", manifestURL, nil)
 	if err != nil {
@@ -327,13 +373,25 @@ func (ci *CacheIndex) refresh() error {
 	ci.ManifestAnnotations = manifest.Annotations
 	ci.mu.Unlock()
 
+	// In r2 mode the index blob is not needed: narinfo is served from R2 and
+	// NAR digests are parsed from the R2 narinfo on demand.
+	if manifest.Annotations != nil && manifest.Annotations["index-type"] == "r2" {
+		ci.mu.Lock()
+		// Clear any stale in-memory index from a previous json-mode run.
+		ci.Data = &CacheIndexData{Entries: make(map[string]IndexEntry)}
+		ci.NarLookups = make(map[string]string)
+		ci.mu.Unlock()
+		fmt.Fprintf(os.Stderr, "[aeroflare proxy] Manifest refreshed (r2 mode): public-r2-url=%s\n", ci.PublicR2URL())
+		return nil
+	}
+
 	if len(manifest.Layers) == 0 {
 		return fmt.Errorf("no layers in cache-index manifest")
 	}
 
 	digest := manifest.Layers[0].Digest
 
-	// 2. Fetch blob
+	// 2. Fetch blob (json mode)
 	blobURL := fmt.Sprintf("%s://%s/v2/%s/blobs/%s", proto, ci.Registry, ci.Repository, digest)
 	req, err = http.NewRequest("GET", blobURL, nil)
 	if err != nil {
@@ -367,7 +425,10 @@ func (ci *CacheIndex) refresh() error {
 	}
 
 	if err := os.MkdirAll(ci.IndexDir, 0755); err == nil {
-		indexFile := filepath.Join(ci.IndexDir, "cache-index.json")
+		if ci.CacheFileName == "" {
+			ci.CacheFileName = "cache-index.json"
+		}
+		indexFile := filepath.Join(ci.IndexDir, ci.CacheFileName)
 		_ = os.WriteFile(indexFile, dataBytes, 0644)
 	}
 
@@ -385,8 +446,6 @@ type ProxyServer struct {
 	UpstreamCaches  []string
 	TokenMgr        *TokenManager
 	CacheIndex      *CacheIndex
-	WorkerURL       string
-	PublicKey       string
 	HttpClient      *http.Client
 	HttpShortClient *http.Client
 }
@@ -434,18 +493,16 @@ func (ps *ProxyServer) serveNixCacheInfo(w http.ResponseWriter) {
 }
 
 func (ps *ProxyServer) servePublicKey(w http.ResponseWriter) {
-	pubKey := ps.PublicKey
-
-	if pubKey == "" && ps.WorkerURL != "" {
-		data, err := ps.fetchWorkerBytes("/public-key")
-		if err == nil {
-			pubKey = string(data)
-		} else {
-			fmt.Fprintf(os.Stderr, "[aeroflare proxy] Warning: failed to fetch public key from worker: %v\n", err)
-		}
+	// Primary source: the cache-index manifest annotation.
+	ps.CacheIndex.mu.RLock()
+	pubKey := ""
+	if ps.CacheIndex.ManifestAnnotations != nil {
+		pubKey = ps.CacheIndex.ManifestAnnotations["public-key"]
 	}
+	ps.CacheIndex.mu.RUnlock()
 
-	if pubKey == "" {
+	// Fallback (json mode): the public_key field of the cached index blob.
+	if pubKey == "" && !ps.CacheIndex.IsR2() {
 		indexData, _ := ps.CacheIndex.Get()
 		pubKey = indexData.PublicKey
 	}
@@ -467,7 +524,10 @@ func (ps *ProxyServer) serveApiPublicKey(w http.ResponseWriter) {
 	annotations := ps.CacheIndex.ManifestAnnotations
 	ps.CacheIndex.mu.RUnlock()
 
-	pubKey := annotations["public-key"]
+	pubKey := ""
+	if annotations != nil {
+		pubKey = annotations["public-key"]
+	}
 	if pubKey != "" {
 		pubKey = strings.TrimSpace(pubKey) + "\n"
 		data := []byte(pubKey)
@@ -481,33 +541,21 @@ func (ps *ProxyServer) serveApiPublicKey(w http.ResponseWriter) {
 }
 
 func (ps *ProxyServer) serveStatus(w http.ResponseWriter) {
-	var indexEntries int
-	var indexGenerated string
-
-	if ps.WorkerURL == "" {
-		indexData, _ := ps.CacheIndex.Get()
-		indexEntries = len(indexData.Entries)
-		indexGenerated = indexData.Generated
-	} else {
-		indexEntries = -1
-		indexGenerated = "managed by Cloudflare D1"
-	}
+	indexData, _ := ps.CacheIndex.Get()
 
 	status := map[string]interface{}{
-		"index_entries":   indexEntries,
-		"index_generated": indexGenerated,
+		"index_entries":   len(indexData.Entries),
+		"index_generated": indexData.Generated,
 		"index_ttl":       int(ps.CacheIndex.IndexTTL.Seconds()),
 		"repo":            ps.Repository,
 		"upstream":        ps.UpstreamCaches,
-		"worker_url":      ps.WorkerURL,
-		"has_public_key":  ps.PublicKey != "",
 	}
 
 	ps.CacheIndex.mu.RLock()
 	annotations := ps.CacheIndex.ManifestAnnotations
 	ps.CacheIndex.mu.RUnlock()
 
-	if annotations["index-type"] == "r2" || annotations["aeroflare.r2.public_url"] != "" {
+	if annotations["index-type"] == "r2" || annotations["public-r2-url"] != "" || annotations["aeroflare.r2.public_url"] != "" {
 		publicURL := annotations["public-r2-url"]
 		if publicURL == "" {
 			publicURL = annotations["aeroflare.r2.public_url"]
@@ -524,26 +572,6 @@ func (ps *ProxyServer) serveStatus(w http.ResponseWriter) {
 
 func (ps *ProxyServer) handleRefresh(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
-
-	if ps.WorkerURL != "" {
-		url := fmt.Sprintf("%s/_refresh", strings.TrimSuffix(ps.WorkerURL, "/"))
-		req, err := http.NewRequest("POST", url, nil)
-		if err == nil {
-			req.Header.Set("User-Agent", "aeroflare/1.0")
-			resp, err := ps.HttpShortClient.Do(req)
-			if err == nil {
-				defer func() { _ = resp.Body.Close() }()
-				w.WriteHeader(resp.StatusCode)
-				_, _ = io.Copy(w, resp.Body)
-				return
-			}
-		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"refreshed": true,
-			"note":      "refresh request sent to worker",
-		})
-		return
-	}
 
 	count, err := ps.CacheIndex.ForceRefresh()
 	if err != nil {
@@ -564,15 +592,9 @@ func (ps *ProxyServer) serveNarInfo(w http.ResponseWriter, r *http.Request, path
 	storeHash := strings.TrimPrefix(path, "/")
 	storeHash = strings.TrimSuffix(storeHash, ".narinfo")
 
-	ps.CacheIndex.mu.RLock()
-	annotations := ps.CacheIndex.ManifestAnnotations
-	ps.CacheIndex.mu.RUnlock()
-
-	if annotations["index-type"] == "r2" {
-		publicURL := annotations["public-r2-url"]
-		if publicURL == "" {
-			publicURL = annotations["aeroflare.r2.public_url"]
-		}
+	// r2 mode: redirect the client to the public R2 URL.
+	if ps.CacheIndex.IsR2() {
+		publicURL := ps.CacheIndex.PublicR2URL()
 		if publicURL == "" {
 			http.Error(w, "Error: The cache uses R2 but no public-url is configured. It is not possible to access this cache.", http.StatusForbidden)
 			return
@@ -580,34 +602,20 @@ func (ps *ProxyServer) serveNarInfo(w http.ResponseWriter, r *http.Request, path
 		redirectURL := fmt.Sprintf("%s/%s.narinfo", strings.TrimRight(publicURL, "/"), storeHash)
 		http.Redirect(w, r, redirectURL, http.StatusFound)
 		return
-	} else if publicURL, ok := annotations["aeroflare.r2.public_url"]; ok && publicURL != "" {
-		// Fallback for previous configuration without index-type
-		redirectURL := fmt.Sprintf("%s/%s.narinfo", strings.TrimRight(publicURL, "/"), storeHash)
-		http.Redirect(w, r, redirectURL, http.StatusFound)
+	}
+
+	// json mode: serve from the cached index.
+	indexData, _ := ps.CacheIndex.Get()
+	if entry, ok := indexData.Entries[storeHash]; ok && entry.NarInfo != "" {
+		body := []byte(entry.NarInfo)
+		w.Header().Set("Content-Type", "text/x-nix-narinfo")
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
 		return
 	}
 
-	if ps.WorkerURL != "" {
-		data, err := ps.fetchWorkerBytes(path)
-		if err == nil {
-			w.Header().Set("Content-Type", "text/x-nix-narinfo")
-			w.Header().Set("Content-Length", strconv.Itoa(len(data)))
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(data)
-			return
-		}
-	} else {
-		indexData, _ := ps.CacheIndex.Get()
-		if entry, ok := indexData.Entries[storeHash]; ok && entry.NarInfo != "" {
-			body := []byte(entry.NarInfo)
-			w.Header().Set("Content-Type", "text/x-nix-narinfo")
-			w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(body)
-			return
-		}
-	}
-
+	// Fallback to upstream cache.
 	upstreamPath := fmt.Sprintf("/%s.narinfo", storeHash)
 	if ps.proxyUpstream(w, r, upstreamPath) {
 		return
@@ -625,17 +633,15 @@ func (ps *ProxyServer) serveNar(w http.ResponseWriter, r *http.Request, path str
 
 	var digest string
 
-	if ps.WorkerURL != "" {
-		digestBytes, err := ps.fetchWorkerBytes(fmt.Sprintf("/nar/%s/digest", narBasename))
-		if err == nil {
-			digest = strings.TrimSpace(string(digestBytes))
-		} else {
-			digestBytes, err = ps.fetchWorkerBytes(fmt.Sprintf("/digest/%s", narBasename))
-			if err == nil {
-				digest = strings.TrimSpace(string(digestBytes))
-			}
+	// r2 mode: derive the blob digest from the narinfo's FileHash served by R2.
+	if ps.CacheIndex.IsR2() {
+		if d, err := ps.digestFromR2Narinfo(narBasename); err == nil && d != "" {
+			digest = d
+		} else if err != nil {
+			fmt.Fprintf(os.Stderr, "[aeroflare proxy] Warning: failed to derive digest from R2 narinfo for %s: %v. Trying upstream...\n", narBasename, err)
 		}
 	} else {
+		// json mode: use the NAR lookup built from the cached index.
 		_, narLookups := ps.CacheIndex.Get()
 		if d, ok := narLookups[narBasename]; ok && d != "" {
 			digest = d
@@ -655,6 +661,71 @@ func (ps *ProxyServer) serveNar(w http.ResponseWriter, r *http.Request, path str
 	}
 
 	http.Error(w, "NAR Not Found", http.StatusNotFound)
+}
+
+// digestFromR2Narinfo fetches the narinfo for a NAR from the public R2 URL and
+// converts its FileHash (sha256:<nix-base32> of the compressed NAR) into the
+// GHCR blob digest form (sha256:<hex>).
+func (ps *ProxyServer) digestFromR2Narinfo(narBasename string) (string, error) {
+	publicURL := ps.CacheIndex.PublicR2URL()
+	if publicURL == "" {
+		return "", fmt.Errorf("no public R2 URL configured")
+	}
+
+	// The narinfo key is the store hash: strip the compression extension from
+	// the NAR basename (e.g. <hash>.nar.xz -> <hash>).
+	storeHash := narBasename
+	if idx := strings.Index(storeHash, ".nar"); idx != -1 {
+		storeHash = storeHash[:idx]
+	}
+
+	narinfoURL := fmt.Sprintf("%s/%s.narinfo", strings.TrimRight(publicURL, "/"), storeHash)
+	req, err := http.NewRequest("GET", narinfoURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "aeroflare/1.0")
+
+	resp, err := ps.HttpShortClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("R2 narinfo HTTP %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	return fileHashToBlobDigest(string(body))
+}
+
+// fileHashToBlobDigest extracts the "FileHash: sha256:<nix-base32>" line from a
+// narinfo and returns the equivalent GHCR blob digest "sha256:<hex>".
+func fileHashToBlobDigest(narinfo string) (string, error) {
+	var fileHash string
+	for _, line := range strings.Split(narinfo, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "FileHash:") {
+			fileHash = strings.TrimSpace(strings.TrimPrefix(line, "FileHash:"))
+			break
+		}
+	}
+	if fileHash == "" {
+		return "", fmt.Errorf("narinfo has no FileHash line")
+	}
+	if !strings.HasPrefix(fileHash, "sha256:") {
+		return "", fmt.Errorf("unsupported FileHash algorithm: %s", fileHash)
+	}
+	encoded := strings.TrimPrefix(fileHash, "sha256:")
+	raw, err := narhash.DecodeBase32(encoded)
+	if err != nil {
+		return "", fmt.Errorf("decode nix-base32 FileHash: %w", err)
+	}
+	return "sha256:" + hex.EncodeToString(raw), nil
 }
 
 func (ps *ProxyServer) streamBlob(w http.ResponseWriter, digest string, contentType string, method string) error {
@@ -727,31 +798,8 @@ func (ps *ProxyServer) proxyUpstream(w http.ResponseWriter, r *http.Request, ups
 	return true
 }
 
-func (ps *ProxyServer) fetchWorkerBytes(path string) ([]byte, error) {
-	if ps.WorkerURL == "" {
-		return nil, fmt.Errorf("no worker URL configured")
-	}
-	url := fmt.Sprintf("%s%s", strings.TrimSuffix(ps.WorkerURL, "/"), path)
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "aeroflare/1.0")
-
-	resp, err := ps.HttpShortClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("worker returned HTTP %d", resp.StatusCode)
-	}
-
-	return io.ReadAll(resp.Body)
-}
-
 // BootstrapConfig fetches configuration dynamically from the GHCR 'cache-config' OCI image/blob.
+// Used by the push/configure pipeline; the proxy itself reads from the cache-index manifest.
 func BootstrapConfig(registry, repository string, tokenMgr *TokenManager) (*RemoteConfig, error) {
 	config, _, err := BootstrapConfigWithAnnotations(registry, repository, tokenMgr)
 	return config, err
@@ -830,46 +878,29 @@ func BootstrapConfigWithAnnotations(registry, repository string, tokenMgr *Token
 }
 
 // StartProxy starts the proxy HTTP server on the configured address.
-func StartProxy(ctx context.Context, port int, listenAddr string, registry string, repository string, indexDir string, indexTTLSeconds int, upstreams []string, githubToken string, workerURL string) (int, error) {
+func StartProxy(ctx context.Context, port int, listenAddr string, registry string, repository string, indexDir string, cacheFileName string, indexTTLSeconds int, upstreams []string, githubToken string) (int, error) {
 	tokenMgr := NewTokenManager(registry, repository, githubToken)
 
-	var bootstrappedKey string
-
-	// Try bootstrapping configuration dynamically from GHCR config blob
-	remoteConf, err := BootstrapConfig(registry, repository, tokenMgr)
-	if err == nil && remoteConf != nil {
-		fmt.Fprintf(os.Stderr, "[aeroflare proxy] Dynamically bootstrapped configuration from GHCR 'cache-config' blob\n")
-		if workerURL == "" && remoteConf.WorkerURL != "" {
-			workerURL = remoteConf.WorkerURL
-			fmt.Fprintf(os.Stderr, "  Worker URL: %s\n", workerURL)
-		}
-		if len(upstreams) == 1 && upstreams[0] == "https://cache.nixos.org" && len(remoteConf.UpstreamCaches) > 0 {
-			upstreams = remoteConf.UpstreamCaches
-			fmt.Fprintf(os.Stderr, "  Upstream Caches: %s\n", strings.Join(upstreams, ", "))
-		}
-		if remoteConf.PublicKey != "" {
-			bootstrappedKey = remoteConf.PublicKey
-			fmt.Fprintf(os.Stderr, "  Public Key: configured from remote config\n")
-		}
-	} else {
-		fmt.Fprintf(os.Stderr, "[aeroflare proxy] Note: could not bootstrap remote config from GHCR: %v (using local/env settings)\n", err)
+	if cacheFileName == "" {
+		cacheFileName = "cache-index.json"
 	}
 
 	ttl := time.Duration(indexTTLSeconds) * time.Second
 	cacheIndex := &CacheIndex{
-		IndexDir:   indexDir,
-		IndexTTL:   ttl,
-		TokenMgr:   tokenMgr,
-		Registry:   registry,
-		Repository: repository,
+		IndexDir:      indexDir,
+		CacheFileName: cacheFileName,
+		IndexTTL:      ttl,
+		TokenMgr:      tokenMgr,
+		Registry:      registry,
+		Repository:    repository,
 	}
 
-	if workerURL == "" {
-		_ = cacheIndex.loadLocal()
-		go func() {
-			_, _ = cacheIndex.Get()
-		}()
-	}
+	// Seed the local cache file (if present) so the very first request doesn't
+	// block on a registry round-trip, then refresh in the background.
+	_ = cacheIndex.loadLocal()
+	go func() {
+		_, _ = cacheIndex.Get()
+	}()
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.MaxIdleConns = 100
@@ -884,8 +915,6 @@ func StartProxy(ctx context.Context, port int, listenAddr string, registry strin
 		UpstreamCaches: upstreams,
 		TokenMgr:       tokenMgr,
 		CacheIndex:     cacheIndex,
-		WorkerURL:      workerURL,
-		PublicKey:      bootstrappedKey,
 		HttpClient: &http.Client{
 			Transport: transport,
 			Timeout:   30 * time.Minute,
@@ -914,11 +943,7 @@ func StartProxy(ctx context.Context, port int, listenAddr string, registry strin
 		fmt.Fprintf(os.Stderr, "[aeroflare proxy] Starting proxy server on http://%s:%d\n", listenAddr, actualPort)
 		fmt.Fprintf(os.Stderr, "  Repo: %s\n", repository)
 		fmt.Fprintf(os.Stderr, "  Upstream: %s\n", strings.Join(upstreams, ", "))
-		if workerURL != "" {
-			fmt.Fprintf(os.Stderr, "  Backend Worker: %s (D1 database mapping mode)\n", workerURL)
-		} else {
-			fmt.Fprintf(os.Stderr, "  Index TTL: %s\n", ttl)
-		}
+		fmt.Fprintf(os.Stderr, "  Index TTL: %s\n", ttl)
 
 		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
 			fmt.Fprintf(os.Stderr, "Server error: %v\n", err)

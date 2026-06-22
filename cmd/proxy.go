@@ -46,12 +46,7 @@ var proxyCmd = &cobra.Command{
 			upstreams = []string{"https://cache.nixos.org"}
 		}
 
-		indexDir := getIndexDir(repository)
-
-		workerURL := os.Getenv("AEROFLARE_WORKER_URL")
-		if workerURL == "" {
-			workerURL = os.Getenv("NIXCACHE_WORKER_URL")
-		}
+		indexDir, cacheFileName := getIndexDirAndFile(repository)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -63,7 +58,7 @@ var proxyCmd = &cobra.Command{
 			cancel()
 		}()
 
-		actualPort, err := network.StartProxy(ctx, port, listenAddr, registry, repository, indexDir, indexTTL, upstreams, getGithubToken(), workerURL)
+		actualPort, err := network.StartProxy(ctx, port, listenAddr, registry, repository, indexDir, cacheFileName, indexTTL, upstreams, getGithubToken())
 		if err != nil {
 			PrintError(fmt.Sprintf("Proxy server failed: %v", err))
 			os.Exit(1)
@@ -78,7 +73,12 @@ func init() {
 	rootCmd.AddCommand(proxyCmd)
 }
 
-func getIndexDir(repository string) string {
+// getIndexDirAndFile resolves the directory and filename used to cache the
+// cache-index blob locally. The directory honors explicit overrides
+// (AEROFLARE_INDEX_DIR / NIXCACHE_INDEX_DIR / CACHE_DIRECTORY) and otherwise
+// defaults to ~/.cache/aeroflare. The filename encodes the configured cache so
+// multiple caches don't clobber each other: cache-index-<identifier>.json
+func getIndexDirAndFile(repository string) (string, string) {
 	indexDir := os.Getenv("AEROFLARE_INDEX_DIR")
 	if indexDir == "" {
 		indexDir = os.Getenv("NIXCACHE_INDEX_DIR")
@@ -91,9 +91,30 @@ func getIndexDir(repository string) string {
 			if err != nil {
 				home = os.TempDir()
 			}
-			repoSlug := strings.ReplaceAll(repository, "/", "--")
-			indexDir = filepath.Join(home, ".cache", "aeroflare-proxy", repoSlug)
+			indexDir = filepath.Join(home, ".cache", "aeroflare")
 		}
 	}
-	return indexDir
+
+	return indexDir, "cache-index-" + sanitizeCacheIdentifier(repository) + ".json"
+}
+
+// sanitizeCacheIdentifier reduces a repository/cache identifier to a safe
+// filename component, replacing path separators and other unsafe characters
+// with dashes.
+func sanitizeCacheIdentifier(repository string) string {
+	// Prefer the raw OCI URL / cache name the user configured, since the
+	// repository slug already collapses both into "owner/nix-cache".
+	identifier := os.Getenv("AEROFLARE_OCI_URL")
+	if identifier == "" {
+		identifier = os.Getenv("AEROFLARE_CACHE")
+	}
+	if identifier == "" {
+		identifier = os.Getenv("NIXCACHE_REPO")
+	}
+	if identifier == "" {
+		identifier = repository
+	}
+
+	replacer := strings.NewReplacer("/", "-", ":", "-", "\\", "-", " ", "_")
+	return replacer.Replace(identifier)
 }
