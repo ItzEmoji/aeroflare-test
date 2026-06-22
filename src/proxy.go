@@ -8,7 +8,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -20,7 +22,18 @@ import (
 
 // GetProtocol determines http vs https protocol (useful for local mock registry tests)
 func GetProtocol(registry string) string {
-	if strings.HasPrefix(registry, "127.0.0.1") || strings.HasPrefix(registry, "localhost") {
+	host := registry
+	if u, err := url.Parse(registry); err == nil && u.Host != "" {
+		host = u.Host
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.Trim(strings.ToLower(host), "[]")
+	if host == "localhost" {
+		return "http"
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
 		return "http"
 	}
 	return "https"
@@ -105,9 +118,16 @@ func (tm *TokenManager) GetToken() (string, error) {
 }
 
 func (tm *TokenManager) fetchToken() (string, error) {
-	scope := fmt.Sprintf("repository:%s:pull", tm.repository)
 	proto := GetProtocol(tm.registry)
-	tokenURL := fmt.Sprintf("%s://%s/token?scope=%s&service=%s", proto, tm.registry, scope, tm.registry)
+	query := url.Values{}
+	query.Set("scope", fmt.Sprintf("repository:%s:pull", tm.repository))
+	query.Set("service", tm.registry)
+	tokenURL := (&url.URL{
+		Scheme:   proto,
+		Host:     tm.registry,
+		Path:     "/token",
+		RawQuery: query.Encode(),
+	}).String()
 
 	client := &http.Client{Timeout: 10 * time.Second}
 
@@ -121,11 +141,8 @@ func (tm *TokenManager) fetchToken() (string, error) {
 			if err == nil {
 				defer func() { _ = resp.Body.Close() }()
 				if resp.StatusCode == http.StatusOK {
-					var result struct {
-						Token string `json:"token"`
-					}
-					if err := json.NewDecoder(resp.Body).Decode(&result); err == nil && result.Token != "" {
-						return result.Token, nil
+					if token, err := decodeTokenResponse(resp.Body); err == nil && token != "" {
+						return token, nil
 					}
 				}
 			}
@@ -149,17 +166,29 @@ func (tm *TokenManager) fetchToken() (string, error) {
 		return "", fmt.Errorf("failed to fetch token (HTTP %d): %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	var result struct {
-		Token string `json:"token"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	token, err := decodeTokenResponse(resp.Body)
+	if err != nil {
 		return "", err
 	}
-	if result.Token == "" {
+	if token == "" {
 		return "", fmt.Errorf("empty token returned from registry")
 	}
 
-	return result.Token, nil
+	return token, nil
+}
+
+func decodeTokenResponse(r io.Reader) (string, error) {
+	var result struct {
+		Token       string `json:"token"`
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.NewDecoder(r).Decode(&result); err != nil {
+		return "", err
+	}
+	if result.Token != "" {
+		return result.Token, nil
+	}
+	return result.AccessToken, nil
 }
 
 // CacheIndex handles loading, refreshing, and querying the cache index.
@@ -193,7 +222,7 @@ func (ci *CacheIndex) IndexType() string {
 		return "json"
 	}
 	if t := ci.ManifestAnnotations["index-type"]; t != "" {
-		return t
+		return strings.ToLower(strings.TrimSpace(t))
 	}
 	return "json"
 }
@@ -307,22 +336,8 @@ func (ci *CacheIndex) updateInMemory(data *CacheIndexData) {
 			if entry.NarInfo == "" || entry.NarDigest == "" {
 				continue
 			}
-			idx := strings.Index(entry.NarInfo, "URL: ")
-			if idx != -1 {
-				start := idx + 5
-				end := strings.IndexByte(entry.NarInfo[start:], '\n')
-				var urlVal string
-				if end == -1 {
-					urlVal = entry.NarInfo[start:]
-				} else {
-					urlVal = entry.NarInfo[start : start+end]
-				}
-				urlVal = strings.TrimSpace(urlVal)
-				parts := strings.Split(urlVal, "/")
-				if len(parts) > 0 {
-					basename := parts[len(parts)-1]
-					narLookups[basename] = entry.NarDigest
-				}
+			if basename := narBasenameFromNarinfo(entry.NarInfo); basename != "" {
+				narLookups[basename] = entry.NarDigest
 			}
 		}
 	}
@@ -332,7 +347,34 @@ func (ci *CacheIndex) updateInMemory(data *CacheIndexData) {
 	ci.mu.Unlock()
 }
 
+func narBasenameFromNarinfo(narinfo string) string {
+	for _, line := range strings.Split(narinfo, "\n") {
+		line = strings.TrimSpace(line)
+		urlVal, ok := strings.CutPrefix(line, "URL:")
+		if !ok {
+			continue
+		}
+		urlVal = strings.TrimSpace(urlVal)
+		if urlVal == "" {
+			continue
+		}
+		if parsed, err := url.Parse(urlVal); err == nil && parsed.Path != "" {
+			urlVal = parsed.Path
+		} else if beforeQuery, _, ok := strings.Cut(urlVal, "?"); ok {
+			urlVal = beforeQuery
+		}
+		basename := path.Base(strings.TrimRight(urlVal, "/"))
+		if basename != "." && basename != "/" {
+			return basename
+		}
+	}
+	return ""
+}
+
 func (ci *CacheIndex) refresh() error {
+	if ci.TokenMgr == nil {
+		return fmt.Errorf("token manager not configured")
+	}
 	token, err := ci.TokenMgr.GetToken()
 	if err != nil {
 		return fmt.Errorf("failed to get token: %w", err)
@@ -626,10 +668,7 @@ func (ps *ProxyServer) serveNarInfo(w http.ResponseWriter, r *http.Request, path
 
 func (ps *ProxyServer) serveNar(w http.ResponseWriter, r *http.Request, path string, method string) {
 	narBasename := strings.TrimPrefix(path, "/nar/")
-	contentType := "application/x-nix-nar"
-	if strings.HasSuffix(narBasename, ".xz") {
-		contentType = "application/x-xz"
-	}
+	contentType := narContentType(narBasename)
 
 	var digest string
 
@@ -649,7 +688,7 @@ func (ps *ProxyServer) serveNar(w http.ResponseWriter, r *http.Request, path str
 	}
 
 	if digest != "" && strings.HasPrefix(digest, "sha256:") {
-		err := ps.streamBlob(w, digest, contentType, method)
+		err := ps.streamBlob(w, r, digest, contentType)
 		if err == nil {
 			return
 		}
@@ -661,6 +700,17 @@ func (ps *ProxyServer) serveNar(w http.ResponseWriter, r *http.Request, path str
 	}
 
 	http.Error(w, "NAR Not Found", http.StatusNotFound)
+}
+
+func narContentType(narBasename string) string {
+	switch {
+	case strings.HasSuffix(narBasename, ".xz"):
+		return "application/x-xz"
+	case strings.HasSuffix(narBasename, ".zst"):
+		return "application/zstd"
+	default:
+		return "application/x-nix-nar"
+	}
 }
 
 // digestFromR2Narinfo fetches the narinfo for a NAR from the public R2 URL and
@@ -686,7 +736,11 @@ func (ps *ProxyServer) digestFromR2Narinfo(narBasename string) (string, error) {
 	}
 	req.Header.Set("User-Agent", "aeroflare/1.0")
 
-	resp, err := ps.HttpShortClient.Do(req)
+	client := ps.HttpShortClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -728,15 +782,15 @@ func fileHashToBlobDigest(narinfo string) (string, error) {
 	return "sha256:" + hex.EncodeToString(raw), nil
 }
 
-func (ps *ProxyServer) streamBlob(w http.ResponseWriter, digest string, contentType string, method string) error {
+func (ps *ProxyServer) streamBlob(w http.ResponseWriter, r *http.Request, digest string, contentType string) error {
 	token, err := ps.TokenMgr.GetToken()
 	if err != nil {
 		return err
 	}
 
 	proto := GetProtocol(ps.Registry)
-	url := fmt.Sprintf("%s://%s/v2/%s/blobs/%s", proto, ps.Registry, ps.Repository, digest)
-	req, err := http.NewRequest(method, url, nil)
+	blobURL := fmt.Sprintf("%s://%s/v2/%s/blobs/%s", proto, ps.Registry, ps.Repository, digest)
+	req, err := http.NewRequestWithContext(r.Context(), r.Method, blobURL, nil)
 	if err != nil {
 		return err
 	}
@@ -744,23 +798,26 @@ func (ps *ProxyServer) streamBlob(w http.ResponseWriter, digest string, contentT
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
+	copyRequestHeaders(req.Header, r.Header)
 
-	resp, err := ps.HttpClient.Do(req)
+	client := ps.HttpClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusNotModified {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("GHCR blob download HTTP %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	w.Header().Set("Content-Type", contentType)
-	if resp.ContentLength > 0 {
-		w.Header().Set("Content-Length", strconv.FormatInt(resp.ContentLength, 10))
-	}
-	w.WriteHeader(http.StatusOK)
+	copyResponseHeaders(w.Header(), resp.Header)
+	w.WriteHeader(resp.StatusCode)
 
 	_, err = io.Copy(w, resp.Body)
 	if err != nil {
@@ -773,29 +830,61 @@ func (ps *ProxyServer) proxyUpstream(w http.ResponseWriter, r *http.Request, ups
 	if len(ps.UpstreamCaches) == 0 {
 		return false
 	}
-	upstreamURL := fmt.Sprintf("%s%s", strings.TrimSuffix(ps.UpstreamCaches[0], "/"), upstreamPath)
-	req, err := http.NewRequest(r.Method, upstreamURL, nil)
-	if err != nil {
-		return false
-	}
-	req.Header.Set("User-Agent", "aeroflare/1.0")
-	resp, err := ps.HttpClient.Do(req)
-	if err != nil {
-		return false
-	}
-	defer func() { _ = resp.Body.Close() }()
 
-	for k, vv := range resp.Header {
-		for _, v := range vv {
-			w.Header().Add(k, v)
+	client := ps.HttpClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+	for _, upstream := range ps.UpstreamCaches {
+		upstream = strings.TrimSpace(upstream)
+		if upstream == "" {
+			continue
+		}
+		upstreamURL := fmt.Sprintf("%s%s", strings.TrimSuffix(upstream, "/"), upstreamPath)
+		if r.URL.RawQuery != "" {
+			upstreamURL += "?" + r.URL.RawQuery
+		}
+		req, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamURL, nil)
+		if err != nil {
+			continue
+		}
+		req.Header.Set("User-Agent", "aeroflare/1.0")
+		copyRequestHeaders(req.Header, r.Header)
+		resp, err := client.Do(req)
+		if err != nil {
+			continue
+		}
+		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusBadRequest {
+			_ = resp.Body.Close()
+			continue
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		copyResponseHeaders(w.Header(), resp.Header)
+		w.WriteHeader(resp.StatusCode)
+		_, err = io.Copy(w, resp.Body)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[aeroflare proxy] Warning: stream interrupted for upstream path %s: %v\n", upstreamPath, err)
+		}
+		return true
+	}
+	return false
+}
+
+func copyRequestHeaders(dst, src http.Header) {
+	for _, key := range []string{"Range", "If-Range", "If-None-Match", "If-Modified-Since"} {
+		for _, value := range src.Values(key) {
+			dst.Add(key, value)
 		}
 	}
-	w.WriteHeader(resp.StatusCode)
-	_, err = io.Copy(w, resp.Body)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[aeroflare proxy] Warning: stream interrupted for upstream path %s: %v\n", upstreamPath, err)
+}
+
+func copyResponseHeaders(dst, src http.Header) {
+	for _, key := range []string{"Accept-Ranges", "Cache-Control", "Content-Length", "Content-Range", "ETag", "Last-Modified"} {
+		for _, value := range src.Values(key) {
+			dst.Add(key, value)
+		}
 	}
-	return true
 }
 
 // BootstrapConfig fetches configuration dynamically from the GHCR 'cache-config' OCI image/blob.

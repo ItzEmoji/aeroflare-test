@@ -138,7 +138,6 @@ func TestProxyServerEndpoints(t *testing.T) {
 	}
 }
 
-
 func TestBootstrapConfig(t *testing.T) {
 	mockRegistry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -439,7 +438,6 @@ func TestProxyServer_HandleRefresh_NoWorker_Success(t *testing.T) {
 	}
 }
 
-
 // TestProxyServer_HandleRefresh_NoWorker_Error verifies /_refresh returns 500 when CacheIndex.ForceRefresh fails.
 func TestProxyServer_HandleRefresh_NoWorker_Error(t *testing.T) {
 	// Use a token manager pointing at a server that always errors
@@ -543,6 +541,65 @@ func TestProxyServer_ServeNar_BlobStream(t *testing.T) {
 	}
 }
 
+func TestProxyServer_ServeNar_BlobRange(t *testing.T) {
+	mockRegistry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/token" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"access_token": "nar-token"}`))
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/blobs/sha256:narblob123") {
+			if r.Header.Get("Range") != "bytes=0-3" {
+				t.Errorf("Expected Range header to be forwarded, got %q", r.Header.Get("Range"))
+			}
+			w.Header().Set("Content-Range", "bytes 0-3/9")
+			w.Header().Set("Accept-Ranges", "bytes")
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = w.Write([]byte("fake"))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer mockRegistry.Close()
+
+	reg := strings.TrimPrefix(mockRegistry.URL, "http://")
+	cacheIndex := &CacheIndex{
+		Data: &CacheIndexData{
+			Entries: map[string]IndexEntry{},
+		},
+		NarLookups: map[string]string{
+			"cached.nar.xz": "sha256:narblob123",
+		},
+		LastFetch: time.Now(),
+		IndexTTL:  5 * time.Minute,
+	}
+	ps := &ProxyServer{
+		Registry:        reg,
+		Repository:      "test-repo/nix-cache",
+		CacheIndex:      cacheIndex,
+		TokenMgr:        NewTokenManager(reg, "test-repo/nix-cache", ""),
+		HttpClient:      &http.Client{Timeout: 30 * time.Second},
+		HttpShortClient: &http.Client{Timeout: 10 * time.Second},
+	}
+
+	req := httptest.NewRequest("GET", "/nar/cached.nar.xz", nil)
+	req.Header.Set("Range", "bytes=0-3")
+	w := httptest.NewRecorder()
+	ps.Handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusPartialContent {
+		t.Errorf("Expected 206 for ranged cached NAR, got %d", resp.StatusCode)
+	}
+	if cr := resp.Header.Get("Content-Range"); cr != "bytes 0-3/9" {
+		t.Errorf("Expected Content-Range bytes 0-3/9, got %q", cr)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != "fake" {
+		t.Errorf("Expected ranged body %q, got %q", "fake", string(body))
+	}
+}
+
 // TestProxyServer_ServeNar_NotFound verifies that /nar/ returns 404 when not found in index or upstream.
 func TestProxyServer_ServeNar_NotFound(t *testing.T) {
 	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -615,6 +672,57 @@ func TestProxyServer_ServeNar_Upstream_Success(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if string(body) != string(narContent) {
 		t.Errorf("Expected NAR content %q, got %q", string(narContent), string(body))
+	}
+}
+
+func TestProxyServer_ServeNar_Upstream_TriesNextCache(t *testing.T) {
+	firstUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer firstUpstream.Close()
+
+	secondUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Range") != "bytes=0-3" {
+			t.Errorf("Expected Range header to be forwarded, got %q", r.Header.Get("Range"))
+		}
+		w.Header().Set("Content-Range", "bytes 0-3/9")
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write([]byte("test"))
+	}))
+	defer secondUpstream.Close()
+
+	cacheIndex := &CacheIndex{
+		Data:       &CacheIndexData{Entries: map[string]IndexEntry{}},
+		NarLookups: map[string]string{},
+		LastFetch:  time.Now(),
+		IndexTTL:   5 * time.Minute,
+	}
+
+	ps := &ProxyServer{
+		Registry:        "ghcr.io",
+		Repository:      "test-repo/nix-cache",
+		CacheIndex:      cacheIndex,
+		TokenMgr:        NewTokenManager("ghcr.io", "test/nix-cache", ""),
+		HttpClient:      &http.Client{Timeout: 30 * time.Second},
+		HttpShortClient: &http.Client{Timeout: 10 * time.Second},
+		UpstreamCaches:  []string{firstUpstream.URL, secondUpstream.URL},
+	}
+
+	req := httptest.NewRequest("GET", "/nar/found-later.nar.xz", nil)
+	req.Header.Set("Range", "bytes=0-3")
+	w := httptest.NewRecorder()
+	ps.Handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusPartialContent {
+		t.Errorf("Expected 206 from second upstream, got %d", resp.StatusCode)
+	}
+	if cr := resp.Header.Get("Content-Range"); cr != "bytes 0-3/9" {
+		t.Errorf("Expected Content-Range from upstream, got %q", cr)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != "test" {
+		t.Errorf("Expected partial upstream body, got %q", string(body))
 	}
 }
 
@@ -752,6 +860,26 @@ func TestCacheIndex_UpdateInMemory_NarLookup(t *testing.T) {
 	}
 }
 
+func TestCacheIndex_UpdateInMemory_NarLookup_AbsoluteURLWithQuery(t *testing.T) {
+	ci := &CacheIndex{
+		LastFetch: time.Now(),
+		IndexTTL:  5 * time.Minute,
+	}
+	ci.updateInMemory(&CacheIndexData{
+		Entries: map[string]IndexEntry{
+			"hash": {
+				NarInfo:   "StorePath: /nix/store/hash-foo\nURL: https://cache.example/nar/hash.nar.zst?download=1\n",
+				NarDigest: "sha256:digest",
+			},
+		},
+	})
+
+	_, narLookups := ci.Get()
+	if narLookups["hash.nar.zst"] != "sha256:digest" {
+		t.Errorf("Expected lookup by URL basename without query, got %#v", narLookups)
+	}
+}
+
 // TestCacheIndex_Get_ReturnsEmptyOnNilData verifies that Get() returns empty non-nil data when index is nil and refresh fails.
 func TestCacheIndex_Get_ReturnsEmptyOnNilData(t *testing.T) {
 	// Token manager pointing at a broken server so refresh will fail
@@ -882,6 +1010,37 @@ func TestTokenManager_GetToken_Cached(t *testing.T) {
 	}
 }
 
+func TestTokenManager_GetToken_QueryAndAccessToken(t *testing.T) {
+	t.Setenv("oci_token", "")
+	t.Setenv("NIXCACHE_TOKEN", "")
+
+	mockRegistry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/token" {
+			if scope := r.URL.Query().Get("scope"); scope != "repository:test-repo/nix-cache:pull" {
+				t.Errorf("Expected repository scope query, got %q", scope)
+			}
+			if service := r.URL.Query().Get("service"); service != r.Host {
+				t.Errorf("Expected service query %q, got %q", r.Host, service)
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"access_token": "access-token-value"}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer mockRegistry.Close()
+
+	reg := strings.TrimPrefix(mockRegistry.URL, "http://")
+	tokenMgr := NewTokenManager(reg, "test-repo/nix-cache", "")
+	token, err := tokenMgr.GetToken()
+	if err != nil {
+		t.Fatalf("GetToken failed: %v", err)
+	}
+	if token != "access-token-value" {
+		t.Errorf("Expected access-token-value, got %s", token)
+	}
+}
+
 // TestTokenManager_GetToken_WithGithubToken verifies that githubToken is used for basic auth exchange.
 func TestTokenManager_GetToken_WithGithubToken(t *testing.T) {
 	t.Setenv("oci_token", "")
@@ -936,7 +1095,6 @@ func TestProxyServer_NixCacheInfo_Content(t *testing.T) {
 		t.Errorf("Expected nix-cache-info body %q, got %q", expected, string(body))
 	}
 }
-
 
 // TestProxyServer_NarInfo_FallsBackToUpstream verifies narinfo falls back to upstream when not in index.
 func TestProxyServer_NarInfo_FallsBackToUpstream(t *testing.T) {
