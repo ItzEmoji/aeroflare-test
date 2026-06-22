@@ -237,8 +237,9 @@ func (ci *CacheIndex) IndexType() string {
 	if ci.ManifestAnnotations == nil {
 		return "json"
 	}
-	if t := ci.ManifestAnnotations["index-type"]; t != "" {
-		return strings.ToLower(strings.TrimSpace(t))
+	t := ci.ManifestAnnotations["index-type"]
+	if t != "" && strings.EqualFold(strings.TrimSpace(t), "r2") {
+		return "r2"
 	}
 	return "json"
 }
@@ -940,18 +941,20 @@ func BootstrapConfigWithAnnotations(registry, repository string, tokenMgr *Token
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, nil, fmt.Errorf("config manifest HTTP %d", resp.StatusCode)
-	}
-
 	var manifest IndexManifest
-	if err := json.NewDecoder(resp.Body).Decode(&manifest); err != nil {
+	if err := func() error {
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("config manifest HTTP %d", resp.StatusCode)
+		}
+
+		return json.NewDecoder(resp.Body).Decode(&manifest)
+	}(); err != nil {
 		return nil, nil, err
 	}
 
@@ -970,7 +973,7 @@ func BootstrapConfigWithAnnotations(registry, repository string, tokenMgr *Token
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	resp, err = client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, manifest.Annotations, err
 	}
