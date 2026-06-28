@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	network "aeroflare/src"
 	"github.com/spf13/cobra"
@@ -61,6 +62,7 @@ func initConfig() {
 
 	viper.SetConfigFile(configFile)
 	viper.SetEnvPrefix("AEROFLARE")
+	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	viper.AutomaticEnv()
 	viper.BindEnv("cache", "AEROFLARE_CACHE")
 
