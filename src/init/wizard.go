@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
+	"github.com/spf13/viper"
 	"aeroflare/src/ui"
 )
 
@@ -36,48 +37,80 @@ func promptCoreSettings(cfg *InitConfig) error {
 	var backend string
 	var gitProvider string
 
-	cfg.Registry = "ghcr.io"
+	cacheURL := viper.GetString("cache-url")
+	cacheName := viper.GetString("cache")
 
-	err := huh.NewForm(
-		huh.NewGroup(
-			huh.NewInput().
-				Title("Cache name").
-				Description("A unique name for your binary cache (e.g. myuser/my-cache)").
-				Value(&cfg.CacheName).
-				Validate(func(s string) error {
-					if strings.TrimSpace(s) == "" {
-						return fmt.Errorf("cache name is required")
-					}
-					return nil
-				}),
-			huh.NewInput().
-				Title("OCI registry").
-				Description("Container registry for storing cache data").
-				Value(&cfg.Registry),
-		),
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Index backend").
-				Description("How should the cache index be stored?").
-				Options(
-					huh.NewOption("Cloudflare R2 (recommended)", "r2"),
-					huh.NewOption("Native OCI Tags (experimental)", "native"),
-					huh.NewOption("JSON index stored in OCI", "oci"),
-				).
-				Value(&backend),
-			huh.NewSelect[string]().
-				Title("Git integration").
-				Description("Connect a Git repository for automatic CI/CD deployments?").
-				Options(
-					huh.NewOption("None", "none"),
-					huh.NewOption("GitHub", "github"),
-					huh.NewOption("GitLab", "gitlab"),
-				).
-				Value(&gitProvider),
-		),
-	).WithTheme(AeroflareTheme()).Run()
-	if err != nil {
-		return fmt.Errorf("wizard cancelled")
+	if cacheURL != "" {
+		cfg.Registry = "custom" // simplified, extract from URL logic
+		cfg.CacheName = cacheURL
+	} else if cacheName != "" {
+		cfg.CacheName = cacheName
+		cfg.Registry = "ghcr.io"
+	} else {
+		cfg.Registry = "ghcr.io"
+	}
+
+	backendVal := viper.GetString("backend")
+	if backendVal != "" {
+		backend = backendVal
+	}
+
+	var groups []*huh.Group
+	var coreFields []huh.Field
+
+	if cfg.CacheName == "" {
+		coreFields = append(coreFields, huh.NewInput().
+			Title("Cache name").
+			Description("A unique name for your binary cache (e.g. myuser/my-cache)").
+			Value(&cfg.CacheName).
+			Validate(func(s string) error {
+				if strings.TrimSpace(s) == "" {
+					return fmt.Errorf("cache name is required")
+				}
+				return nil
+			}))
+		coreFields = append(coreFields, huh.NewInput().
+			Title("OCI registry").
+			Description("Container registry for storing cache data").
+			Value(&cfg.Registry))
+	}
+
+	if len(coreFields) > 0 {
+		groups = append(groups, huh.NewGroup(coreFields...))
+	}
+
+	var backendFields []huh.Field
+	if backendVal == "" {
+		backendFields = append(backendFields, huh.NewSelect[string]().
+			Title("Index backend").
+			Description("How should the cache index be stored?").
+			Options(
+				huh.NewOption("Cloudflare R2 (recommended)", "r2"),
+				huh.NewOption("Native OCI Tags (experimental)", "native"),
+				huh.NewOption("JSON index stored in OCI", "oci"),
+			).
+			Value(&backend))
+	}
+
+	backendFields = append(backendFields, huh.NewSelect[string]().
+		Title("Git integration").
+		Description("Connect a Git repository for automatic CI/CD deployments?").
+		Options(
+			huh.NewOption("None", "none"),
+			huh.NewOption("GitHub", "github"),
+			huh.NewOption("GitLab", "gitlab"),
+		).
+		Value(&gitProvider))
+
+	if len(backendFields) > 0 {
+		groups = append(groups, huh.NewGroup(backendFields...))
+	}
+
+	if len(groups) > 0 {
+		err := huh.NewForm(groups...).WithTheme(AeroflareTheme()).Run()
+		if err != nil {
+			return fmt.Errorf("wizard cancelled")
+		}
 	}
 
 	cfg.Backend = BackendType(backend)
