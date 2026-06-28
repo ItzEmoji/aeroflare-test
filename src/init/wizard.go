@@ -2,6 +2,7 @@ package setup
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 
@@ -39,15 +40,31 @@ func promptCoreSettings(cfg *InitConfig) error {
 
 	cacheURL := viper.GetString("cache-url")
 	cacheName := viper.GetString("cache")
+	registryVal := viper.GetString("registry")
 
 	if cacheURL != "" {
-		cfg.Registry = "custom" // simplified, extract from URL logic
-		cfg.CacheName = cacheURL
+		if strings.HasPrefix(cacheURL, "oci://") {
+			u, err := url.Parse(cacheURL)
+			if err == nil && u.Host != "" {
+				cfg.Registry = u.Host
+				cfg.CacheName = strings.TrimPrefix(u.Path, "/")
+			} else {
+				cfg.Registry = "custom"
+				cfg.CacheName = cacheURL
+			}
+		} else {
+			cfg.Registry = "custom"
+			cfg.CacheName = cacheURL
+		}
 	} else if cacheName != "" {
 		cfg.CacheName = cacheName
 		cfg.Registry = "ghcr.io"
 	} else {
 		cfg.Registry = "ghcr.io"
+	}
+
+	if registryVal != "" {
+		cfg.Registry = registryVal
 	}
 
 	backendVal := viper.GetString("backend")
@@ -74,6 +91,9 @@ func promptCoreSettings(cfg *InitConfig) error {
 				}
 				return nil
 			}))
+	}
+
+	if cacheURL == "" && registryVal == "" {
 		coreFields = append(coreFields, huh.NewInput().
 			Title("OCI registry").
 			Description("Container registry for storing cache data").
