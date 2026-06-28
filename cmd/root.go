@@ -12,6 +12,7 @@ import (
 
 var VerboseCount int
 var cacheURL string
+var IsNewConfig bool
 
 var rootCmd = &cobra.Command{
 	Use:   "aeroflare",
@@ -47,6 +48,7 @@ func initConfig() {
 	} else {
 		configFile := filepath.Join(aeroDir, "aeroflare.yaml")
 		if _, err := os.Stat(configFile); os.IsNotExist(err) {
+			IsNewConfig = true
 			defaultConfig := []byte(`# Aeroflare Configuration
 # theme: catppuccin
 # cache-url: oci://docker.io/my-org/my-cache
