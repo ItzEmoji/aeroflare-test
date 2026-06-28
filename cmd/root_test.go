@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/spf13/viper"
-	"github.com/zalando/go-keyring"
 )
 
 func TestGetCacheURL(t *testing.T) {
@@ -63,45 +62,3 @@ func TestGetCacheURL(t *testing.T) {
 	}
 }
 
-func TestGetGithubToken(t *testing.T) {
-	keyring.MockInit()
-	
-	tests := []struct {
-		name        string
-		githubToken string
-		ghToken     string
-		expected    string
-	}{
-		{
-			name:        "GITHUB_TOKEN takes precedence over GH_TOKEN",
-			githubToken: "token1",
-			ghToken:     "token2",
-			expected:    "token1",
-		},
-		{
-			name:        "GH_TOKEN used when GITHUB_TOKEN is empty",
-			githubToken: "",
-			ghToken:     "token2",
-			expected:    "token2",
-		},
-		{
-			name:        "Empty when both are empty",
-			githubToken: "",
-			ghToken:     "",
-			expected:    "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("GITHUB_TOKEN", tt.githubToken)
-			t.Setenv("GH_TOKEN", tt.ghToken)
-			
-			result := getGithubToken()
-			
-			if result != tt.expected {
-				t.Errorf("getGithubToken() = %v, want %v", result, tt.expected)
-			}
-		})
-	}
-}

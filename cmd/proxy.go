@@ -59,7 +59,7 @@ var proxyCmd = &cobra.Command{
 			cancel()
 		}()
 
-		actualPort, err := proxy.StartProxy(ctx, port, listenAddr, registry, repository, indexDir, "", indexTTL, upstreams, getGithubToken())
+		actualPort, err := proxy.StartProxy(ctx, port, listenAddr, registry, repository, indexDir, "", indexTTL, upstreams, globalGithubToken)
 		if err != nil {
 			PrintError(fmt.Sprintf("Proxy server failed: %v", err))
 			os.Exit(1)
