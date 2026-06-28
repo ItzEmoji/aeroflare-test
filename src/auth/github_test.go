@@ -3,22 +3,20 @@ package auth
 import (
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
 
 func TestRequestDeviceCode(t *testing.T) {
+	t.Parallel()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"device_code": "dc123", "user_code": "123-456", "verification_uri": "https://github.com/login/device", "interval": 5}`))
 	}))
 	defer ts.Close()
 
-	originalURL := githubBaseURL
-	githubBaseURL = ts.URL
-	defer func() { githubBaseURL = originalURL }()
-
-	res, err := RequestDeviceCode("test-client")
+	res, err := requestDeviceCode("test-client", ts.URL)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -28,15 +26,16 @@ func TestRequestDeviceCode(t *testing.T) {
 }
 
 func TestPollAccessTokenSuccess(t *testing.T) {
-	requests := 0
+	t.Parallel()
+	var requests int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests++
+		reqNum := atomic.AddInt32(&requests, 1)
 		w.Header().Set("Content-Type", "application/json")
-		if requests == 1 {
+		if reqNum == 1 {
 			w.Write([]byte(`{"error": "authorization_pending"}`))
 			return
 		}
-		if requests == 2 {
+		if reqNum == 2 {
 			w.Write([]byte(`{"error": "slow_down"}`))
 			return
 		}
@@ -44,15 +43,7 @@ func TestPollAccessTokenSuccess(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	originalURL := githubBaseURL
-	githubBaseURL = ts.URL
-	defer func() { githubBaseURL = originalURL }()
-
-	originalTimeUnit := pollTimeUnit
-	pollTimeUnit = time.Millisecond
-	defer func() { pollTimeUnit = originalTimeUnit }()
-
-	token, err := PollAccessToken("client_id", "device_code", 1)
+	token, err := pollAccessToken("client_id", "device_code", 1, ts.URL, time.Millisecond)
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}
@@ -62,10 +53,11 @@ func TestPollAccessTokenSuccess(t *testing.T) {
 }
 
 func TestPollAccessTokenTransientError(t *testing.T) {
-	requests := 0
+	t.Parallel()
+	var requests int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests++
-		if requests == 1 {
+		reqNum := atomic.AddInt32(&requests, 1)
+		if reqNum == 1 {
 			w.Header().Set("Content-Type", "text/html")
 			w.WriteHeader(http.StatusBadGateway)
 			w.Write([]byte(`<html>502 Bad Gateway</html>`))
@@ -76,15 +68,7 @@ func TestPollAccessTokenTransientError(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	originalURL := githubBaseURL
-	githubBaseURL = ts.URL
-	defer func() { githubBaseURL = originalURL }()
-
-	originalTimeUnit := pollTimeUnit
-	pollTimeUnit = time.Millisecond
-	defer func() { pollTimeUnit = originalTimeUnit }()
-
-	token, err := PollAccessToken("client_id", "device_code", 1)
+	token, err := pollAccessToken("client_id", "device_code", 1, ts.URL, time.Millisecond)
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}
@@ -94,27 +78,21 @@ func TestPollAccessTokenTransientError(t *testing.T) {
 }
 
 func TestPollAccessTokenError(t *testing.T) {
+	t.Parallel()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"error": "expired_token"}`))
 	}))
 	defer ts.Close()
 
-	originalURL := githubBaseURL
-	githubBaseURL = ts.URL
-	defer func() { githubBaseURL = originalURL }()
-
-	originalTimeUnit := pollTimeUnit
-	pollTimeUnit = time.Millisecond
-	defer func() { pollTimeUnit = originalTimeUnit }()
-
-	_, err := PollAccessToken("client_id", "device_code", 1)
+	_, err := pollAccessToken("client_id", "device_code", 1, ts.URL, time.Millisecond)
 	if err == nil || err.Error() != "expired_token" {
 		t.Fatalf("expected expired_token error, got: %v", err)
 	}
 }
 
 func TestPollAccessTokenClientError(t *testing.T) {
+	t.Parallel()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -122,15 +100,7 @@ func TestPollAccessTokenClientError(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	originalURL := githubBaseURL
-	githubBaseURL = ts.URL
-	defer func() { githubBaseURL = originalURL }()
-
-	originalTimeUnit := pollTimeUnit
-	pollTimeUnit = time.Millisecond
-	defer func() { pollTimeUnit = originalTimeUnit }()
-
-	_, err := PollAccessToken("client_id", "device_code", 1)
+	_, err := pollAccessToken("client_id", "device_code", 1, ts.URL, time.Millisecond)
 	if err == nil || err.Error() != "access_denied" {
 		t.Fatalf("expected access_denied, got: %v", err)
 	}

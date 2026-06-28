@@ -11,7 +11,6 @@ import (
 )
 
 var githubBaseURL = "https://github.com"
-var pollTimeUnit = time.Second
 
 type DeviceCodeRequest struct {
 	ClientID string `json:"client_id"`
@@ -25,11 +24,19 @@ type DeviceCodeResponse struct {
 }
 
 func RequestDeviceCode(clientID string) (*DeviceCodeResponse, error) {
+	return requestDeviceCode(clientID, githubBaseURL)
+}
+
+func requestDeviceCode(clientID, baseURL string) (*DeviceCodeResponse, error) {
 	reqBodyBytes, err := json.Marshal(DeviceCodeRequest{ClientID: clientID})
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequest("POST", githubBaseURL+"/login/device/code", bytes.NewBuffer(reqBodyBytes))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", baseURL+"/login/device/code", bytes.NewBuffer(reqBodyBytes))
 	if err != nil {
 		return nil, err
 	}
@@ -70,6 +77,10 @@ type TokenResponse struct {
 }
 
 func PollAccessToken(clientID string, deviceCode string, interval int) (string, error) {
+	return pollAccessToken(clientID, deviceCode, interval, githubBaseURL, time.Second)
+}
+
+func pollAccessToken(clientID string, deviceCode string, interval int, baseURL string, pollTimeUnit time.Duration) (string, error) {
 	if interval <= 0 {
 		interval = 5
 	}
@@ -92,8 +103,10 @@ func PollAccessToken(clientID string, deviceCode string, interval int) (string, 
 		case <-ctx.Done():
 			return "", errors.New("polling timed out")
 		case <-ticker.C:
-			req, err := http.NewRequestWithContext(ctx, "POST", githubBaseURL+"/login/oauth/access_token", bytes.NewBuffer(reqBodyBytes))
+			reqCtx, reqCancel := context.WithTimeout(ctx, 10*time.Second)
+			req, err := http.NewRequestWithContext(reqCtx, "POST", baseURL+"/login/oauth/access_token", bytes.NewBuffer(reqBodyBytes))
 			if err != nil {
+				reqCancel()
 				return "", err
 			}
 			req.Header.Set("Accept", "application/json")
@@ -101,42 +114,51 @@ func PollAccessToken(clientID string, deviceCode string, interval int) (string, 
 
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
+				reqCancel()
 				continue // retry on network error
 			}
 
 			if resp.StatusCode >= 500 {
 				resp.Body.Close()
+				reqCancel()
 				continue // transient error, retry
 			}
 
 			body, err := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			if err != nil {
+				reqCancel()
 				continue
 			}
 
 			var result TokenResponse
 			if err := json.Unmarshal(body, &result); err != nil {
+				reqCancel()
 				return "", err
 			}
 
 			if result.AccessToken != "" {
+				reqCancel()
 				return result.AccessToken, nil
 			}
 
 			if result.Error == "authorization_pending" {
+				reqCancel()
 				continue
 			}
 			if result.Error == "slow_down" {
 				interval += 5
 				ticker.Reset(time.Duration(interval) * pollTimeUnit)
+				reqCancel()
 				continue
 			}
 
 			if result.Error != "" {
+				reqCancel()
 				return "", errors.New(result.Error)
 			}
 
+			reqCancel()
 			return "", errors.New("invalid response from server")
 		}
 	}
