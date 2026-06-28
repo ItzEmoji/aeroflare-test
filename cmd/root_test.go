@@ -1,13 +1,17 @@
 package cmd
 
 import (
-	"os"
 	"testing"
 	"github.com/spf13/viper"
 	"strings"
 )
 
 func TestGetCacheURL(t *testing.T) {
+	viper.SetEnvPrefix("AEROFLARE")
+	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+	viper.AutomaticEnv()
+	viper.BindEnv("cache", "AEROFLARE_CACHE")
+
 	tests := []struct {
 		name     string
 		cacheUrl string
@@ -42,29 +46,17 @@ func TestGetCacheURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			viper.Reset()
-			viper.SetEnvPrefix("AEROFLARE")
-			viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
-			viper.AutomaticEnv()
-			viper.BindEnv("cache", "AEROFLARE_CACHE")
+			t.Setenv("AEROFLARE_CACHE_URL", tt.cacheUrl)
+			t.Setenv("AEROFLARE_CACHE", tt.cache)
 
-			os.Unsetenv("AEROFLARE_CACHE_URL")
-			os.Unsetenv("AEROFLARE_CACHE")
-			
-			if tt.cacheUrl != "" {
-				os.Setenv("AEROFLARE_CACHE_URL", tt.cacheUrl)
-			}
-			if tt.cache != "" {
-				os.Setenv("AEROFLARE_CACHE", tt.cache)
-			}
-			
+			// Clear viper cache since we are not using Reset()
+			viper.Set("cache-url", nil)
+			viper.Set("cache", nil)
+
 			result := GetCacheURL()
 			if result != tt.expected {
 				t.Errorf("GetCacheURL() = %v, want %v", result, tt.expected)
 			}
-			
-			os.Unsetenv("AEROFLARE_CACHE_URL")
-			os.Unsetenv("AEROFLARE_CACHE")
 		})
 	}
 }
