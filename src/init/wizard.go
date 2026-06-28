@@ -55,6 +55,11 @@ func promptCoreSettings(cfg *InitConfig) error {
 		backend = backendVal
 	}
 
+	gitProviderVal := viper.GetString("git-provider")
+	if gitProviderVal != "" {
+		gitProvider = gitProviderVal
+	}
+
 	var groups []*huh.Group
 	var coreFields []huh.Field
 
@@ -92,15 +97,17 @@ func promptCoreSettings(cfg *InitConfig) error {
 			Value(&backend))
 	}
 
-	backendFields = append(backendFields, huh.NewSelect[string]().
-		Title("Git integration").
-		Description("Connect a Git repository for automatic CI/CD deployments?").
-		Options(
-			huh.NewOption("None", "none"),
-			huh.NewOption("GitHub", "github"),
-			huh.NewOption("GitLab", "gitlab"),
-		).
-		Value(&gitProvider))
+	if gitProviderVal == "" {
+		backendFields = append(backendFields, huh.NewSelect[string]().
+			Title("Git integration").
+			Description("Connect a Git repository for automatic CI/CD deployments?").
+			Options(
+				huh.NewOption("None", "none"),
+				huh.NewOption("GitHub", "github"),
+				huh.NewOption("GitLab", "gitlab"),
+			).
+			Value(&gitProvider))
+	}
 
 	if len(backendFields) > 0 {
 		groups = append(groups, huh.NewGroup(backendFields...))
