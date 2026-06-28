@@ -20,7 +20,7 @@ func NewResolver(secretKey string) *Resolver {
 	return &Resolver{secretKey: secretKey}
 }
 
-func (r *Resolver) WithSecretsManager(manager secrets.Manager) *Resolver {
+func (r *Resolver) withSecretsManager(manager secrets.Manager) *Resolver {
 	r.secretsManager = manager
 	return r
 }
