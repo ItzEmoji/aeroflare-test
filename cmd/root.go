@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 
 	network "aeroflare/src"
+	"aeroflare/src/secrets"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -108,3 +110,18 @@ func init() {
 	viper.BindPFlag("cache-url", rootCmd.PersistentFlags().Lookup("cache-url"))
 }
 
+func getGithubToken() string {
+	manager := secrets.NewManager()
+	val, err := manager.Get("github-token")
+	if err == nil && val != "" {
+		return val
+	} else if err != nil && err != secrets.ErrNotFound && !errors.Is(err, os.ErrNotExist) {
+		PrintError("Warning: failed to read github-token from secret manager: " + err.Error())
+	}
+	
+	token := os.Getenv("GITHUB_TOKEN")
+	if token == "" {
+		token = os.Getenv("GH_TOKEN")
+	}
+	return token
+}

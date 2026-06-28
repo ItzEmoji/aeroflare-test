@@ -24,7 +24,7 @@ var runCmd = &cobra.Command{
 
 		run.DisplaySummary(cfg)
 
-		targetPaths, err := run.ExecuteCommand(cfg, registry, repository, indexDir, globalGithubToken)
+		targetPaths, err := run.ExecuteCommand(cfg, registry, repository, indexDir, getGithubToken())
 		if err != nil {
 			PrintError(err.Error())
 			os.Exit(1)
