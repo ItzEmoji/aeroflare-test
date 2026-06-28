@@ -3,10 +3,15 @@ package cmd
 import (
 	"fmt"
 	"os"
+
+	"aeroflare/src/secrets"
 )
 
 func isTerminal() bool {
-	stat, _ := os.Stdin.Stat()
+	stat, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
 	return (stat.Mode() & os.ModeCharDevice) != 0
 }
 
@@ -24,6 +29,8 @@ func RequireGithubToken() string {
 	manager := getSecretsManager()
 	if token, err := manager.Get("github-token"); err == nil && token != "" {
 		return token
+	} else if err != nil && err != secrets.ErrNotFound {
+		fmt.Fprintf(os.Stderr, "Warning: failed to read from keychain: %v\n", err)
 	}
 	
 	if isTerminal() {
@@ -47,6 +54,8 @@ func RequireGitlabToken() string {
 	manager := getSecretsManager()
 	if token, err := manager.Get("gitlab-token"); err == nil && token != "" {
 		return token
+	} else if err != nil && err != secrets.ErrNotFound {
+		fmt.Fprintf(os.Stderr, "Warning: failed to read from keychain: %v\n", err)
 	}
 	
 	if isTerminal() {
@@ -60,14 +69,17 @@ func RequireGitlabToken() string {
 }
 
 func RequireCloudflareToken() (string, string) {
+	manager := getSecretsManager()
+
 	apiToken := globalCfToken
 	if apiToken == "" {
 		if t := os.Getenv("CLOUDFLARE_API_TOKEN"); t != "" {
 			apiToken = t
 		} else {
-			manager := getSecretsManager()
-			if t, err := manager.Get("cf-token"); err == nil {
+			if t, err := manager.Get("cf-token"); err == nil && t != "" {
 				apiToken = t
+			} else if err != nil && err != secrets.ErrNotFound {
+				fmt.Fprintf(os.Stderr, "Warning: failed to read from keychain: %v\n", err)
 			}
 		}
 	}
@@ -77,9 +89,10 @@ func RequireCloudflareToken() (string, string) {
 		if u := os.Getenv("CLOUDFLARE_ACCOUNT_ID"); u != "" {
 			userID = u
 		} else {
-			manager := getSecretsManager()
-			if u, err := manager.Get("cf-user-id"); err == nil {
+			if u, err := manager.Get("cf-user-id"); err == nil && u != "" {
 				userID = u
+			} else if err != nil && err != secrets.ErrNotFound {
+				fmt.Fprintf(os.Stderr, "Warning: failed to read from keychain: %v\n", err)
 			}
 		}
 	}
@@ -104,7 +117,13 @@ func RequireOCIToken(registry string) (string, string) {
 	manager := getSecretsManager()
 	
 	user, errUser := manager.Get(fmt.Sprintf("oci-%s-username", registry))
+	if errUser != nil && errUser != secrets.ErrNotFound {
+		fmt.Fprintf(os.Stderr, "Warning: failed to read from keychain: %v\n", errUser)
+	}
 	pass, errPass := manager.Get(fmt.Sprintf("oci-%s-token", registry))
+	if errPass != nil && errPass != secrets.ErrNotFound {
+		fmt.Fprintf(os.Stderr, "Warning: failed to read from keychain: %v\n", errPass)
+	}
 	
 	if errUser == nil && errPass == nil && user != "" && pass != "" {
 		return user, pass

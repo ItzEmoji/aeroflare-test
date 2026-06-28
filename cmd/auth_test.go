@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 	"github.com/spf13/cobra"
+	"aeroflare/src/secrets"
 )
 
 type mockManager struct {
@@ -24,7 +25,7 @@ func (m *mockManager) Get(key string) (string, error) {
 	if val, ok := m.data[key]; ok {
 		return val, nil
 	}
-	return "", errors.New("not found")
+	return "", secrets.ErrNotFound
 }
 
 func executeCommand(root *cobra.Command, args ...string) (output string, err error) {
