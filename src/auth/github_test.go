@@ -1,10 +1,16 @@
 package auth
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
+
+func init() {
+	pollTimeUnit = time.Millisecond
+}
 
 func TestRequestDeviceCode(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -13,7 +19,6 @@ func TestRequestDeviceCode(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	// Temporarily override the base URL for testing (we'll add a variable for this in implementation)
 	originalURL := githubBaseURL
 	githubBaseURL = ts.URL
 	defer func() { githubBaseURL = originalURL }()
@@ -24,5 +29,98 @@ func TestRequestDeviceCode(t *testing.T) {
 	}
 	if res.UserCode != "123-456" {
 		t.Errorf("expected 123-456, got %s", res.UserCode)
+	}
+}
+
+func TestPollAccessTokenSuccess(t *testing.T) {
+	requests := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.Header().Set("Content-Type", "application/json")
+		if requests == 1 {
+			w.Write([]byte(`{"error": "authorization_pending"}`))
+			return
+		}
+		if requests == 2 {
+			w.Write([]byte(`{"error": "slow_down"}`))
+			return
+		}
+		w.Write([]byte(`{"access_token": "gho_12345"}`))
+	}))
+	defer ts.Close()
+
+	originalURL := githubBaseURL
+	githubBaseURL = ts.URL
+	defer func() { githubBaseURL = originalURL }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	token, err := PollAccessToken(ctx, "client_id", "device_code", 1)
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if token != "gho_12345" {
+		t.Fatalf("expected token gho_12345, got: %s", token)
+	}
+}
+
+func TestPollAccessTokenContextCancel(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"error": "authorization_pending"}`))
+	}))
+	defer ts.Close()
+
+	originalURL := githubBaseURL
+	githubBaseURL = ts.URL
+	defer func() { githubBaseURL = originalURL }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(5 * time.Millisecond)
+		cancel()
+	}()
+
+	_, err := PollAccessToken(ctx, "client_id", "device_code", 1)
+	if err != context.Canceled {
+		t.Fatalf("expected context canceled, got: %v", err)
+	}
+}
+
+func TestPollAccessTokenError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"error": "expired_token"}`))
+	}))
+	defer ts.Close()
+
+	originalURL := githubBaseURL
+	githubBaseURL = ts.URL
+	defer func() { githubBaseURL = originalURL }()
+
+	ctx := context.Background()
+	_, err := PollAccessToken(ctx, "client_id", "device_code", 1)
+	if err == nil || err.Error() != "expired_token" {
+		t.Fatalf("expected expired_token error, got: %v", err)
+	}
+}
+
+func TestPollAccessTokenMalformed(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusBadGateway)
+		w.Write([]byte(`<html>502 Bad Gateway</html>`))
+	}))
+	defer ts.Close()
+
+	originalURL := githubBaseURL
+	githubBaseURL = ts.URL
+	defer func() { githubBaseURL = originalURL }()
+
+	ctx := context.Background()
+	_, err := PollAccessToken(ctx, "client_id", "device_code", 1)
+	if err == nil {
+		t.Fatalf("expected json unmarshal error, got nil")
 	}
 }

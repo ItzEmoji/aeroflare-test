@@ -2,15 +2,20 @@ package auth
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"time"
 )
 
 var githubBaseURL = "https://github.com"
+var pollTimeUnit = time.Second
+
+type DeviceCodeRequest struct {
+	ClientID string `json:"client_id"`
+}
 
 type DeviceCodeResponse struct {
 	DeviceCode      string `json:"device_code"`
@@ -20,8 +25,11 @@ type DeviceCodeResponse struct {
 }
 
 func RequestDeviceCode(clientID string) (*DeviceCodeResponse, error) {
-	reqBody := []byte(fmt.Sprintf(`{"client_id":"%s"}`, clientID))
-	req, err := http.NewRequest("POST", githubBaseURL+"/login/device/code", bytes.NewBuffer(reqBody))
+	reqBodyBytes, err := json.Marshal(DeviceCodeRequest{ClientID: clientID})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest("POST", githubBaseURL+"/login/device/code", bytes.NewBuffer(reqBodyBytes))
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +42,11 @@ func RequestDeviceCode(clientID string) (*DeviceCodeResponse, error) {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
 	var result DeviceCodeResponse
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, err
@@ -42,43 +54,79 @@ func RequestDeviceCode(clientID string) (*DeviceCodeResponse, error) {
 	return &result, nil
 }
 
+type TokenRequest struct {
+	ClientID   string `json:"client_id"`
+	DeviceCode string `json:"device_code"`
+	GrantType  string `json:"grant_type"`
+}
+
 type TokenResponse struct {
 	AccessToken string `json:"access_token"`
 	Error       string `json:"error"`
 }
 
-func PollAccessToken(clientID, deviceCode string, interval int) (string, error) {
-	ticker := time.NewTicker(time.Duration(interval) * time.Second)
+func PollAccessToken(ctx context.Context, clientID, deviceCode string, interval int) (string, error) {
+	if interval <= 0 {
+		interval = 5
+	}
+	ticker := time.NewTicker(time.Duration(interval) * pollTimeUnit)
 	defer ticker.Stop()
 
 	for {
-		<-ticker.C
-		reqBody := []byte(fmt.Sprintf(`{"client_id":"%s","device_code":"%s","grant_type":"urn:ietf:params:oauth:grant-type:device_code"}`, clientID, deviceCode))
-		req, _ := http.NewRequest("POST", githubBaseURL+"/login/oauth/access_token", bytes.NewBuffer(reqBody))
-		req.Header.Set("Accept", "application/json")
-		req.Header.Set("Content-Type", "application/json")
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-ticker.C:
+			reqBodyBytes, err := json.Marshal(TokenRequest{
+				ClientID:   clientID,
+				DeviceCode: deviceCode,
+				GrantType:  "urn:ietf:params:oauth:grant-type:device_code",
+			})
+			if err != nil {
+				return "", err
+			}
 
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			continue // retry on network error
-		}
+			req, err := http.NewRequestWithContext(ctx, "POST", githubBaseURL+"/login/oauth/access_token", bytes.NewBuffer(reqBodyBytes))
+			if err != nil {
+				return "", err
+			}
+			req.Header.Set("Accept", "application/json")
+			req.Header.Set("Content-Type", "application/json")
 
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				continue // retry on network error
+			}
 
-		var result TokenResponse
-		json.Unmarshal(body, &result)
+			body, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				continue
+			}
 
-		if result.AccessToken != "" {
-			return result.AccessToken, nil
-		}
+			var result TokenResponse
+			if err := json.Unmarshal(body, &result); err != nil {
+				return "", err
+			}
 
-		if result.Error == "authorization_pending" || result.Error == "slow_down" {
-			continue
-		}
-		
-		if result.Error != "" {
-			return "", errors.New(result.Error)
+			if result.AccessToken != "" {
+				return result.AccessToken, nil
+			}
+
+			if result.Error == "authorization_pending" {
+				continue
+			}
+			if result.Error == "slow_down" {
+				interval += 5
+				ticker.Reset(time.Duration(interval) * pollTimeUnit)
+				continue
+			}
+
+			if result.Error != "" {
+				return "", errors.New(result.Error)
+			}
+
+			return "", errors.New("invalid response from server")
 		}
 	}
 }
