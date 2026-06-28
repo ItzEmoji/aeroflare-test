@@ -11,19 +11,37 @@ var (
 	cfToken     string
 )
 
+// SecretsManager allows mocking in tests
+var SecretsManager secrets.Manager
+
+func getSecretsManager() secrets.Manager {
+	if SecretsManager != nil {
+		return SecretsManager
+	}
+	return secrets.NewManager()
+}
+
 var authCmd = &cobra.Command{
 	Use:   "auth",
 	Short: "Manage Aeroflare authentication secrets",
 	Run: func(cmd *cobra.Command, args []string) {
-		manager := secrets.NewManager()
+		manager := getSecretsManager()
 		
 		if githubToken != "" {
-			manager.Set("github-token", githubToken)
+			err := manager.Set("github-token", githubToken)
+			if err != nil {
+				PrintError(err.Error())
+				return
+			}
 			fmt.Println("Saved github-token")
 		}
 		
 		if cfToken != "" {
-			manager.Set("cf-token", cfToken)
+			err := manager.Set("cf-token", cfToken)
+			if err != nil {
+				PrintError(err.Error())
+				return
+			}
 			fmt.Println("Saved cf-token")
 		}
 		
@@ -38,7 +56,7 @@ var authSetCmd = &cobra.Command{
 	Short: "Set an arbitrary secret",
 	Args:  cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
-		manager := secrets.NewManager()
+		manager := getSecretsManager()
 		err := manager.Set(args[0], args[1])
 		if err != nil {
 			PrintError(err.Error())
