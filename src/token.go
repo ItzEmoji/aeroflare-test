@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/viper"
 	"aeroflare/src/proxy"
 )
 
@@ -116,9 +117,8 @@ func GetToken(registry, repository string) string {
 	return cred // Fallback
 }
 
-// GetRegistryAndRepository computes the registry and repository from environment variables.
 func GetRegistryAndRepository() (string, string) {
-	registry := os.Getenv("AEROFLARE_REGISTRY")
+	registry := viper.GetString("registry")
 	if registry == "" {
 		registry = os.Getenv("NIXCACHE_REGISTRY")
 	}
@@ -126,7 +126,7 @@ func GetRegistryAndRepository() (string, string) {
 		registry = "ghcr.io"
 	}
 
-	ociURL := os.Getenv("AEROFLARE_OCI_URL")
+	ociURL := viper.GetString("cache-url")
 	var repository string
 
 	if ociURL != "" {
@@ -139,12 +139,12 @@ func GetRegistryAndRepository() (string, string) {
 			repository = ociURL
 		}
 	} else {
-		cacheName := os.Getenv("AEROFLARE_CACHE")
+		cacheName := viper.GetString("cache")
 		if cacheName == "" {
 			cacheName = os.Getenv("NIXCACHE_REPO")
 		}
 		if cacheName == "" {
-			fmt.Fprintln(os.Stderr, "Error: AEROFLARE_CACHE or AEROFLARE_OCI_URL environment variable is required")
+			fmt.Fprintln(os.Stderr, "Error: AEROFLARE_CACHE or AEROFLARE_CACHE_URL configuration is required")
 			os.Exit(1)
 		}
 		cacheName = strings.ToLower(cacheName)

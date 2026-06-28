@@ -3,6 +3,7 @@ package setup
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/huh"
@@ -157,7 +158,13 @@ func promptCoreSettings(cfg *InitConfig) error {
 func promptCredentials(cfg *InitConfig) error {
 	// Cloudflare credentials are always required (we deploy a Worker).
 	cfg.CloudflareAccountID = viper.GetString("cloudflare-account-id")
+	if cfg.CloudflareAccountID == "" {
+		cfg.CloudflareAccountID = os.Getenv("CLOUDFLARE_ACCOUNT_ID")
+	}
 	cfg.CloudflareToken = viper.GetString("cloudflare-api-token")
+	if cfg.CloudflareToken == "" {
+		cfg.CloudflareToken = os.Getenv("CLOUDFLARE_API_TOKEN")
+	}
 
 	// Git token detection.
 	cfg.GitToken = viper.GetString("git-token")

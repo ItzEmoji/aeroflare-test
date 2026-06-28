@@ -1,19 +1,15 @@
-package cmd
+### Task 6: Refactor `cmd/run.go` to use the new package
 
-import (
-	"fmt"
-	"os"
+**Files:**
+- Modify: `cmd/run.go`
 
-	network "aeroflare/src"
-	"aeroflare/src/push"
-	"aeroflare/src/run"
-	"github.com/spf13/cobra"
-)
+**Interfaces:**
+- Consumes: `src/run`, `src/push`
 
-var runCmd = &cobra.Command{
-	Use:   "run [--] <command>...",
-	Short: "Run a command with proxy substituter and push the output paths",
-	Args:  cobra.MinimumNArgs(1),
+- [ ] **Step 1: Update `cmd/run.go` Run function**
+
+Replace the `Run` body of `runCmd` with:
+```go
 	Run: func(cmd *cobra.Command, args []string) {
 		registry, repository := network.GetRegistryAndRepository()
 		indexDir := getIndexDir(repository)
@@ -37,7 +33,7 @@ var runCmd = &cobra.Command{
 
 		fmt.Printf("\nFound %d store paths to push from run command output.\n", len(targetPaths))
 
-		// Trigger Push
+        // Trigger Push
 		pushCfg := &push.PushConfig{
 			TargetPaths: targetPaths,
 			Compression: pushCompression,
@@ -47,7 +43,6 @@ var runCmd = &cobra.Command{
 			SigningKey:  pushSigningKey,
 			KeepFiles:   pushKeepFiles,
 			ForcePush:   pushForcePush,
-			Verbosity:   VerboseCount,
 		}
 
 		plan, err := push.Preflight(pushCfg)
@@ -63,17 +58,18 @@ var runCmd = &cobra.Command{
 			os.Exit(1)
 		}
 	},
-}
+```
 
-func init() {
-	// Re-use push flags
-	runCmd.Flags().StringVar(&pushCompression, "compression", "zstd", "Compression type: zstd, xz, gzip, none")
-	runCmd.Flags().StringVar(&pushCacheURL, "upstream-cache", "https://cache.nixos.org", "Upstream binary cache URL")
-	runCmd.Flags().IntVar(&pushWorkers, "workers", 50, "Number of concurrent workers")
-	runCmd.Flags().BoolVar(&pushPrepareRefs, "prepare-refs", true, "Also prepare references")
-	runCmd.Flags().StringVar(&pushSigningKey, "signing-key", "", "Path to Nix signing private key file")
-	runCmd.Flags().BoolVar(&pushKeepFiles, "keep", false, "Keep generated files")
-	runCmd.Flags().BoolVar(&pushForcePush, "force", false, "Force push files")
+Note: In an earlier task, `cmd/run.go` might have been partially updated. Please overwrite its `Run` function body to match the one exactly specified here, and make sure to remove any leftover proxy code that is now inside `run.ExecuteCommand`.
 
-	rootCmd.AddCommand(runCmd)
-}
+- [ ] **Step 2: Build and format**
+
+Run: `go build ./... && go fmt ./...`
+Expected: Successful compilation
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add cmd/run.go
+git commit -m "refactor: update cmd/run to use src/run and src/push packages"
+```
