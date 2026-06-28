@@ -73,6 +73,12 @@ func TestPushAndPullBlob(t *testing.T) {
 	var checkedBlob, initiatedUpload, uploadedBlob bool
 
 	mockRegistry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Mock API Ping
+		if r.URL.Path == "/v2/" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
 		// Mock HEAD blobs checks
 		if r.Method == "HEAD" && strings.HasPrefix(r.URL.Path, "/v2/test-repo/blobs/") {
 			checkedBlob = true
@@ -92,6 +98,13 @@ func TestPushAndPullBlob(t *testing.T) {
 		if r.Method == "PUT" && r.URL.Path == "/v2/test-repo/blobs/uploads/session-123" {
 			uploadedBlob = true
 			w.WriteHeader(http.StatusCreated)
+			return
+		}
+
+		// Mock PATCH blob upload
+		if r.Method == "PATCH" && r.URL.Path == "/v2/test-repo/blobs/uploads/session-123" {
+			w.Header().Set("Location", "/v2/test-repo/blobs/uploads/session-123")
+			w.WriteHeader(http.StatusAccepted)
 			return
 		}
 
@@ -169,6 +182,12 @@ func TestPushBlob_AlreadyExists(t *testing.T) {
 	var uploadAttempted bool
 
 	mockRegistry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Mock API Ping
+		if r.URL.Path == "/v2/" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
 		if r.Method == "HEAD" && strings.HasPrefix(r.URL.Path, "/v2/test-repo/blobs/") {
 			w.WriteHeader(http.StatusOK) // Blob already exists
 			return
@@ -203,6 +222,12 @@ func TestPullBlob_Error(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	mockRegistry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Mock API Ping
+		if r.URL.Path == "/v2/" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte("blob not found"))
 	}))
