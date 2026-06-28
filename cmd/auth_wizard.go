@@ -49,9 +49,9 @@ func runInteractiveGithubAuth() string {
 	if token != "" {
 		if err := manager.Set("github-token", token); err != nil {
 			PrintError(fmt.Sprintf("Failed to save token: %v", err))
-		} else {
-			fmt.Println("Success! GitHub token saved.")
+			return ""
 		}
+		fmt.Println("Success! GitHub token saved. This will automatically be used for GitHub APIs and the ghcr.io container registry.")
 	}
 	return token
 }
@@ -66,9 +66,9 @@ func runInteractiveGitlabAuth() string {
 	if token != "" {
 		if err := manager.Set("gitlab-token", token); err != nil {
 			PrintError(fmt.Sprintf("Failed to save token: %v", err))
-		} else {
-			fmt.Println("Success! GitLab token saved.")
+			return ""
 		}
+		fmt.Println("Success! GitLab token saved.")
 	}
 	return token
 }
@@ -89,11 +89,13 @@ func runInteractiveCloudflareAuth() (string, string) {
 	if apiToken != "" {
 		if err := manager.Set("cf-token", apiToken); err != nil {
 			PrintError(fmt.Sprintf("Failed to save Cloudflare API token: %v", err))
+			return "", ""
 		}
 	}
 	if userID != "" {
 		if err := manager.Set("cf-user-id", userID); err != nil {
 			PrintError(fmt.Sprintf("Failed to save Cloudflare user ID: %v", err))
+			return "", ""
 		}
 	}
 	if apiToken != "" || userID != "" {
@@ -126,9 +128,11 @@ func runInteractiveOCIAuth(registry string) (string, string) {
 	if registry != "" {
 		if err := manager.Set(fmt.Sprintf("oci-%s-username", registry), user); err != nil {
 			PrintError(fmt.Sprintf("Failed to save OCI username: %v", err))
+			return "", ""
 		}
 		if err := manager.Set(fmt.Sprintf("oci-%s-token", registry), pass); err != nil {
 			PrintError(fmt.Sprintf("Failed to save OCI token: %v", err))
+			return "", ""
 		}
 		fmt.Println("OCI credentials saved.")
 	}
