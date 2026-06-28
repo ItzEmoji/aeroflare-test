@@ -1,0 +1,49 @@
+package auth
+
+import (
+	"errors"
+	"os"
+
+	"aeroflare/src/secrets"
+)
+
+var ErrTokenNotFound = errors.New("token not found in flags, environment, or secrets manager")
+
+type Resolver struct {
+	secretKey string
+	flagValue string
+	envVars   []string
+}
+
+func NewResolver(secretKey string) *Resolver {
+	return &Resolver{secretKey: secretKey}
+}
+
+func (r *Resolver) WithFlag(val string) *Resolver {
+	r.flagValue = val
+	return r
+}
+
+func (r *Resolver) WithEnv(keys ...string) *Resolver {
+	r.envVars = append(r.envVars, keys...)
+	return r
+}
+
+func (r *Resolver) Resolve() (string, error) {
+	if r.flagValue != "" {
+		return r.flagValue, nil
+	}
+
+	for _, key := range r.envVars {
+		if val := os.Getenv(key); val != "" {
+			return val, nil
+		}
+	}
+
+	manager := secrets.NewManager()
+	if val, err := manager.Get(r.secretKey); err == nil && val != "" {
+		return val, nil
+	}
+
+	return "", ErrTokenNotFound
+}
