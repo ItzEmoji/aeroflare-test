@@ -59,12 +59,7 @@ var proxyCmd = &cobra.Command{
 			cancel()
 		}()
 
-		var token string
-		if registry == "ghcr.io" {
-			token = RequireGithubToken()
-		} else if registry != "" {
-			_, token = RequireOCIToken(registry)
-		}
+		token := getTokenForRegistry(registry)
 		actualPort, err := proxy.StartProxy(ctx, port, listenAddr, registry, repository, indexDir, "", indexTTL, upstreams, token)
 		if err != nil {
 			PrintError(fmt.Sprintf("Proxy server failed: %v", err))

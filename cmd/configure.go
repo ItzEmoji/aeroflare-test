@@ -30,12 +30,7 @@ var configureCmd = &cobra.Command{
 		var existingR2PublicURL string
 		var existingR2Endpoint = ""
 
-		var token string
-		if registry == "ghcr.io" {
-			token = RequireGithubToken()
-		} else if registry != "" {
-			_, token = RequireOCIToken(registry)
-		}
+		token := getTokenForRegistry(registry)
 		tokenMgr := proxy.NewTokenManager(registry, repository, token)
 		remoteConf, existingAnnotations, _ := proxy.BootstrapConfigWithAnnotations(context.Background(), nil, registry, repository, tokenMgr)
 		if existingAnnotations != nil {

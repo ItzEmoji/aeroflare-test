@@ -19,50 +19,36 @@ func getSecretsManager() secrets.Manager {
 var authCmd = &cobra.Command{
 	Use:   "auth",
 	Short: "Manage Aeroflare authentication secrets",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		manager := getSecretsManager()
 		
+		tokens := []struct {
+			key string
+			val string
+		}{
+			{"github-token", globalGithubToken},
+			{"gitlab-token", globalGitlabToken},
+			{"cf-token", globalCfToken},
+			{"cf-user-id", globalCfUserID},
+		}
+
 		savedAny := false
-		if globalGithubToken != "" {
-			err := manager.Set("github-token", globalGithubToken)
-			if err != nil {
-				PrintError(err.Error())
-				return
+		for _, t := range tokens {
+			if t.val != "" {
+				err := manager.Set(t.key, t.val)
+				if err != nil {
+					PrintError(err.Error())
+					return err
+				}
+				fmt.Printf("Saved %s\n", t.key)
+				savedAny = true
 			}
-			fmt.Println("Saved github-token")
-			savedAny = true
-		}
-		if globalGitlabToken != "" {
-			err := manager.Set("gitlab-token", globalGitlabToken)
-			if err != nil {
-				PrintError(err.Error())
-				return
-			}
-			fmt.Println("Saved gitlab-token")
-			savedAny = true
-		}
-		if globalCfToken != "" {
-			err := manager.Set("cf-token", globalCfToken)
-			if err != nil {
-				PrintError(err.Error())
-				return
-			}
-			fmt.Println("Saved cf-token")
-			savedAny = true
-		}
-		if globalCfUserID != "" {
-			err := manager.Set("cf-user-id", globalCfUserID)
-			if err != nil {
-				PrintError(err.Error())
-				return
-			}
-			fmt.Println("Saved cf-user-id")
-			savedAny = true
 		}
 		
 		if !savedAny {
 			runInteractiveAuth()
 		}
+		return nil
 	},
 }
 
@@ -70,14 +56,15 @@ var authSetCmd = &cobra.Command{
 	Use:   "set [key] [value]",
 	Short: "Set an arbitrary secret",
 	Args:  cobra.ExactArgs(2),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		manager := getSecretsManager()
 		err := manager.Set(args[0], args[1])
 		if err != nil {
 			PrintError(err.Error())
-			return
+			return err
 		}
 		fmt.Printf("Saved %s\n", args[0])
+		return nil
 	},
 }
 

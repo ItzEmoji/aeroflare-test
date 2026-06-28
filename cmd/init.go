@@ -34,13 +34,17 @@ any changes. No infrastructure is created until you confirm.`,
 		}
 
 		// Ensure Cloudflare tokens exist if needed (they're needed for provision)
-		cfToken, cfID := RequireCloudflareToken()
-		os.Setenv("CLOUDFLARE_API_TOKEN", cfToken)
-		os.Setenv("CLOUDFLARE_ACCOUNT_ID", cfID)
+		if cfg.Backend == setup.BackendR2 {
+			cfToken, cfID := RequireCloudflareToken()
+			os.Setenv("CLOUDFLARE_API_TOKEN", cfToken)
+			os.Setenv("CLOUDFLARE_ACCOUNT_ID", cfID)
+		}
 		
 		// Ensure Github token exists if they need GitHub Actions / Registry
-		ghToken := RequireGithubToken()
-		os.Setenv("GITHUB_TOKEN", ghToken)
+		if cfg.Registry == "ghcr.io" || cfg.GitProvider == setup.GitGitHub {
+			ghToken := RequireGithubToken()
+			os.Setenv("GITHUB_TOKEN", ghToken)
+		}
 
 		if err := setup.RunProvision(cfg); err != nil {
 			PrintError(err.Error())

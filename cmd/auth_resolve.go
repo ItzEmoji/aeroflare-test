@@ -138,3 +138,13 @@ func RequireOCIToken(registry string) (string, string) {
 	os.Exit(1)
 	return "", ""
 }
+
+func getTokenForRegistry(registry string) string {
+	if registry == "ghcr.io" {
+		return RequireGithubToken()
+	} else if registry != "" {
+		_, token := RequireOCIToken(registry)
+		return token
+	}
+	return ""
+}

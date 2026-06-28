@@ -52,9 +52,11 @@ func TestAuthCmdBehavior(t *testing.T) {
 
 	// Reset variables since they are package level
 	globalGithubToken = ""
+	globalGitlabToken = ""
 	globalCfToken = ""
+	globalCfUserID = ""
 
-	_, err := executeCommand(rootCmd, "auth", "--github-token=test-gh", "--cf-token=test-cf")
+	_, err := executeCommand(rootCmd, "auth", "--github-token=test-gh", "--gitlab-token=test-gl", "--cf-token=test-cf", "--cf-user-id=test-id")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -63,8 +65,16 @@ func TestAuthCmdBehavior(t *testing.T) {
 		t.Errorf("Expected github-token to be 'test-gh', got %s", mock.data["github-token"])
 	}
 
+	if mock.data["gitlab-token"] != "test-gl" {
+		t.Errorf("Expected gitlab-token to be 'test-gl', got %s", mock.data["gitlab-token"])
+	}
+
 	if mock.data["cf-token"] != "test-cf" {
 		t.Errorf("Expected cf-token to be 'test-cf', got %s", mock.data["cf-token"])
+	}
+
+	if mock.data["cf-user-id"] != "test-id" {
+		t.Errorf("Expected cf-user-id to be 'test-id', got %s", mock.data["cf-user-id"])
 	}
 }
 
@@ -74,12 +84,13 @@ func TestAuthCmdError(t *testing.T) {
 	defer func() { SecretsManager = nil }()
 
 	globalGithubToken = ""
+	globalGitlabToken = ""
 	globalCfToken = ""
+	globalCfUserID = ""
 
 	_, err := executeCommand(rootCmd, "auth", "--github-token=fail")
-	// error swallowed and printed
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
+	if err == nil {
+		t.Fatalf("Expected an error, got nil")
 	}
 }
 

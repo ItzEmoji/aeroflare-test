@@ -24,13 +24,7 @@ var runCmd = &cobra.Command{
 
 		run.DisplaySummary(cfg)
 
-		var token string
-		if registry == "ghcr.io" {
-			token = RequireGithubToken()
-		} else if registry != "" {
-			// Basic generic handling if needed
-			_, token = RequireOCIToken(registry)
-		}
+		token := getTokenForRegistry(registry)
 		targetPaths, err := run.ExecuteCommand(cfg, registry, repository, indexDir, token)
 		if err != nil {
 			PrintError(err.Error())
