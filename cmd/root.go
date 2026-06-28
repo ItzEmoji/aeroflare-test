@@ -44,23 +44,20 @@ func initConfig() {
 	
 	if err := os.MkdirAll(aeroDir, 0755); err != nil {
 		PrintError("Could not create config directory: " + err.Error())
-		os.Exit(1)
-	}
-
-	configFile := filepath.Join(aeroDir, "aeroflare.yaml")
-	if _, err := os.Stat(configFile); os.IsNotExist(err) {
-		defaultConfig := []byte(`# Aeroflare Configuration
+	} else {
+		configFile := filepath.Join(aeroDir, "aeroflare.yaml")
+		if _, err := os.Stat(configFile); os.IsNotExist(err) {
+			defaultConfig := []byte(`# Aeroflare Configuration
 # theme: catppuccin
 # cache-url: oci://docker.io/my-org/my-cache
 # backend: r2
 `)
-		if err := os.WriteFile(configFile, defaultConfig, 0644); err != nil {
-			PrintError("Could not write default config file: " + err.Error())
-			os.Exit(1)
+			if err := os.WriteFile(configFile, defaultConfig, 0644); err != nil {
+				PrintError("Could not write default config file: " + err.Error())
+			}
 		}
+		viper.SetConfigFile(configFile)
 	}
-
-	viper.SetConfigFile(configFile)
 	viper.SetEnvPrefix("AEROFLARE")
 	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	viper.AutomaticEnv()

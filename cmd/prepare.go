@@ -21,7 +21,6 @@ var (
 	workers     int
 	prepareRefs bool
 	signingKey  string
-	upstreamCacheURL string
 )
 
 var prepareCmd = &cobra.Command{
@@ -52,7 +51,7 @@ var prepareCmd = &cobra.Command{
 		cfg := &prepare.Config{
 			OutputDir:          outputDir,
 			Compression:        compType,
-			CacheURL:           upstreamCacheURL,
+			CacheURL:           cacheURL,
 			Workers:            workers,
 			PrepareMissingRefs: prepareRefs,
 			SigningKey:         signKey,
@@ -112,7 +111,6 @@ func init() {
 	prepareCmd.Flags().IntVar(&workers, "workers", 50, "Number of concurrent workers")
 	prepareCmd.Flags().BoolVar(&prepareRefs, "prepare-refs", false, "Also prepare NAR+narinfo for references not on the upstream cache (one level deep)")
 	prepareCmd.Flags().StringVar(&signingKey, "signing-key", "", "Path to Nix signing private key file (format: name:base64seed, as produced by 'nix key-gen-secret')")
-	prepareCmd.Flags().StringVar(&upstreamCacheURL, "cache-url", "https://cache.nixos.org", "Upstream binary cache URL")
 
 	rootCmd.AddCommand(prepareCmd)
 }
