@@ -6,11 +6,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	githubToken string
-	cfToken     string
-)
-
 // SecretsManager allows mocking in tests
 var SecretsManager secrets.Manager
 
@@ -27,27 +22,46 @@ var authCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		manager := getSecretsManager()
 		
-		if githubToken != "" {
-			err := manager.Set("github-token", githubToken)
+		savedAny := false
+		if globalGithubToken != "" {
+			err := manager.Set("github-token", globalGithubToken)
 			if err != nil {
 				PrintError(err.Error())
 				return
 			}
 			fmt.Println("Saved github-token")
+			savedAny = true
 		}
-		
-		if cfToken != "" {
-			err := manager.Set("cf-token", cfToken)
+		if globalGitlabToken != "" {
+			err := manager.Set("gitlab-token", globalGitlabToken)
+			if err != nil {
+				PrintError(err.Error())
+				return
+			}
+			fmt.Println("Saved gitlab-token")
+			savedAny = true
+		}
+		if globalCfToken != "" {
+			err := manager.Set("cf-token", globalCfToken)
 			if err != nil {
 				PrintError(err.Error())
 				return
 			}
 			fmt.Println("Saved cf-token")
+			savedAny = true
+		}
+		if globalCfUserID != "" {
+			err := manager.Set("cf-user-id", globalCfUserID)
+			if err != nil {
+				PrintError(err.Error())
+				return
+			}
+			fmt.Println("Saved cf-user-id")
+			savedAny = true
 		}
 		
-		if githubToken == "" && cfToken == "" {
+		if !savedAny {
 			runInteractiveAuth()
-			return
 		}
 	},
 }
@@ -68,9 +82,6 @@ var authSetCmd = &cobra.Command{
 }
 
 func init() {
-	authCmd.Flags().StringVar(&githubToken, "github-token", "", "GitHub Token")
-	authCmd.Flags().StringVar(&cfToken, "cf-token", "", "Cloudflare Token")
-	
 	authCmd.AddCommand(authSetCmd)
 	rootCmd.AddCommand(authCmd)
 }

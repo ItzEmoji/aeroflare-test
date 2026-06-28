@@ -30,7 +30,13 @@ var configureCmd = &cobra.Command{
 		var existingR2PublicURL string
 		var existingR2Endpoint = ""
 
-		tokenMgr := proxy.NewTokenManager(registry, repository, getGithubToken())
+		var token string
+		if registry == "ghcr.io" {
+			token = RequireGithubToken()
+		} else if registry != "" {
+			_, token = RequireOCIToken(registry)
+		}
+		tokenMgr := proxy.NewTokenManager(registry, repository, token)
 		remoteConf, existingAnnotations, _ := proxy.BootstrapConfigWithAnnotations(context.Background(), nil, registry, repository, tokenMgr)
 		if existingAnnotations != nil {
 			b := existingAnnotations["aeroflare.index-type"]

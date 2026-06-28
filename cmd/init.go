@@ -33,6 +33,15 @@ any changes. No infrastructure is created until you confirm.`,
 			return
 		}
 
+		// Ensure Cloudflare tokens exist if needed (they're needed for provision)
+		cfToken, cfID := RequireCloudflareToken()
+		os.Setenv("CLOUDFLARE_API_TOKEN", cfToken)
+		os.Setenv("CLOUDFLARE_ACCOUNT_ID", cfID)
+		
+		// Ensure Github token exists if they need GitHub Actions / Registry
+		ghToken := RequireGithubToken()
+		os.Setenv("GITHUB_TOKEN", ghToken)
+
 		if err := setup.RunProvision(cfg); err != nil {
 			PrintError(err.Error())
 			os.Exit(1)
