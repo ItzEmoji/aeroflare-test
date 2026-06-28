@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	network "aeroflare/src"
+	"aeroflare/src/secrets"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -98,6 +99,11 @@ func init() {
 }
 
 func getGithubToken() string {
+	manager := secrets.NewManager()
+	if val, err := manager.Get("github-token"); err == nil && val != "" {
+		return val
+	}
+	
 	token := os.Getenv("GITHUB_TOKEN")
 	if token == "" {
 		token = os.Getenv("GH_TOKEN")
