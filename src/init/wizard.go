@@ -148,15 +148,25 @@ func promptCoreSettings(cfg *InitConfig) error {
 // promptCredentials asks for only the credentials required by the selected options.
 func promptCredentials(cfg *InitConfig) error {
 	// Cloudflare credentials are always required (we deploy a Worker).
-	cfg.CloudflareAccountID = os.Getenv("CLOUDFLARE_ACCOUNT_ID")
-	cfg.CloudflareToken = os.Getenv("CLOUDFLARE_API_TOKEN")
+	cfg.CloudflareAccountID = viper.GetString("cloudflare-account-id")
+	if cfg.CloudflareAccountID == "" {
+		cfg.CloudflareAccountID = os.Getenv("CLOUDFLARE_ACCOUNT_ID")
+	}
+
+	cfg.CloudflareToken = viper.GetString("cloudflare-api-token")
+	if cfg.CloudflareToken == "" {
+		cfg.CloudflareToken = os.Getenv("CLOUDFLARE_API_TOKEN")
+	}
 
 	// Git token detection.
-	switch cfg.GitProvider {
-	case GitGitHub:
-		cfg.GitToken = detectGitHubToken()
-	case GitGitLab:
-		cfg.GitToken = detectGitLabToken()
+	cfg.GitToken = viper.GetString("git-token")
+	if cfg.GitToken == "" {
+		switch cfg.GitProvider {
+		case GitGitHub:
+			cfg.GitToken = detectGitHubToken()
+		case GitGitLab:
+			cfg.GitToken = detectGitLabToken()
+		}
 	}
 
 	// Build the credentials form with only the fields that are missing.
