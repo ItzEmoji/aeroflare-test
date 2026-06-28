@@ -3,7 +3,6 @@ package setup
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 
 	"github.com/charmbracelet/huh"
@@ -45,7 +44,10 @@ func promptCoreSettings(cfg *InitConfig) error {
 	if cacheURL != "" {
 		if strings.HasPrefix(cacheURL, "oci://") {
 			u, err := url.Parse(cacheURL)
-			if err == nil && u.Host != "" {
+			if err != nil {
+				return fmt.Errorf("invalid cache-url: %w", err)
+			}
+			if u.Host != "" {
 				cfg.Registry = u.Host
 				cfg.CacheName = strings.TrimPrefix(u.Path, "/")
 			} else {
@@ -93,7 +95,7 @@ func promptCoreSettings(cfg *InitConfig) error {
 			}))
 	}
 
-	if cacheURL == "" && registryVal == "" {
+	if cacheURL == "" && registryVal == "" && cacheName == "" {
 		coreFields = append(coreFields, huh.NewInput().
 			Title("OCI registry").
 			Description("Container registry for storing cache data").
@@ -104,9 +106,9 @@ func promptCoreSettings(cfg *InitConfig) error {
 		groups = append(groups, huh.NewGroup(coreFields...))
 	}
 
-	var backendFields []huh.Field
+	var secondaryFields []huh.Field
 	if backendVal == "" {
-		backendFields = append(backendFields, huh.NewSelect[string]().
+		secondaryFields = append(secondaryFields, huh.NewSelect[string]().
 			Title("Index backend").
 			Description("How should the cache index be stored?").
 			Options(
@@ -118,7 +120,7 @@ func promptCoreSettings(cfg *InitConfig) error {
 	}
 
 	if gitProviderVal == "" {
-		backendFields = append(backendFields, huh.NewSelect[string]().
+		secondaryFields = append(secondaryFields, huh.NewSelect[string]().
 			Title("Git integration").
 			Description("Connect a Git repository for automatic CI/CD deployments?").
 			Options(
@@ -129,8 +131,8 @@ func promptCoreSettings(cfg *InitConfig) error {
 			Value(&gitProvider))
 	}
 
-	if len(backendFields) > 0 {
-		groups = append(groups, huh.NewGroup(backendFields...))
+	if len(secondaryFields) > 0 {
+		groups = append(groups, huh.NewGroup(secondaryFields...))
 	}
 
 	if len(groups) > 0 {
@@ -149,14 +151,7 @@ func promptCoreSettings(cfg *InitConfig) error {
 func promptCredentials(cfg *InitConfig) error {
 	// Cloudflare credentials are always required (we deploy a Worker).
 	cfg.CloudflareAccountID = viper.GetString("cloudflare-account-id")
-	if cfg.CloudflareAccountID == "" {
-		cfg.CloudflareAccountID = os.Getenv("CLOUDFLARE_ACCOUNT_ID")
-	}
-
 	cfg.CloudflareToken = viper.GetString("cloudflare-api-token")
-	if cfg.CloudflareToken == "" {
-		cfg.CloudflareToken = os.Getenv("CLOUDFLARE_API_TOKEN")
-	}
 
 	// Git token detection.
 	cfg.GitToken = viper.GetString("git-token")
