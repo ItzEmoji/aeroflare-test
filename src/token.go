@@ -99,7 +99,11 @@ func GetToken(registry, repository string) string {
 		cred = os.Getenv("GITLAB_TOKEN")
 	}
 	if cred == "" {
-		return os.Getenv("oci_token")
+		cred = os.Getenv("oci_token")
+	}
+
+	if cred == "" {
+		return ""
 	}
 
 	username := os.Getenv("AEROFLARE_GIT_USERNAME")

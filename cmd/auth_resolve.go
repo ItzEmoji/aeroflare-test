@@ -143,6 +143,7 @@ func getTokenForRegistry(registry string) string {
 	if registry == "ghcr.io" {
 		token := RequireGithubToken()
 		os.Setenv("oci_token", token)
+		os.Setenv("GITHUB_TOKEN", token)
 		return token
 	} else if registry != "" {
 		_, token := RequireOCIToken(registry)
