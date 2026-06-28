@@ -1,9 +1,11 @@
 package cmd
 
 import (
-	"testing"
-	"github.com/spf13/viper"
 	"strings"
+	"testing"
+
+	"github.com/spf13/viper"
+	"github.com/zalando/go-keyring"
 )
 
 func TestGetCacheURL(t *testing.T) {
@@ -62,6 +64,8 @@ func TestGetCacheURL(t *testing.T) {
 }
 
 func TestGetGithubToken(t *testing.T) {
+	keyring.MockInit()
+	
 	tests := []struct {
 		name        string
 		githubToken string
@@ -93,19 +97,9 @@ func TestGetGithubToken(t *testing.T) {
 			t.Setenv("GITHUB_TOKEN", tt.githubToken)
 			t.Setenv("GH_TOKEN", tt.ghToken)
 			
-			// We assume the secret manager does not have github-token set in the test environment,
-			// or if it does, we temporarily clear it out.
-			// Currently testing the environment variable fallbacks.
 			result := getGithubToken()
 			
-			// If secret manager has it set, result might not match tt.expected.
-			// Ideally we would mock the manager, but the function instantiates it directly.
-			// So we check if it matches the expected fallback when not found in manager.
 			if result != tt.expected {
-				// If a real token is returned from the secret manager, it will override our env vars.
-				// We print a log but do not strictly fail if it looks like a real token from SM, 
-				// though for a pure unit test we expect it to match if SM is empty.
-				// For the purpose of the test, we assume SM is empty.
 				t.Errorf("getGithubToken() = %v, want %v", result, tt.expected)
 			}
 		})

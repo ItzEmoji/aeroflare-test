@@ -8,6 +8,8 @@ import (
 	"github.com/zalando/go-keyring"
 )
 
+var ErrNotFound = keyring.ErrNotFound
+
 type Manager interface {
 	Set(key, value string) error
 	Get(key string) (string, error)
