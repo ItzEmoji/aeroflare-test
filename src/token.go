@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/viper"
 	"aeroflare/src/proxy"
+	"aeroflare/src/auth"
 )
 
 // ExchangeToken performs a token exchange for a given OCI registry.
@@ -87,29 +88,16 @@ func ExchangeToken(registry, repository, username, basicAuthToken string) (strin
 
 // GetToken attempts to get a valid token, exchanging a GitHub/GitLab PAT if necessary
 func GetToken(registry, repository string) string {
-	if t := os.Getenv("oci_token"); t != "" && !strings.HasPrefix(t, "ghp_") && !strings.HasPrefix(t, "github_pat_") && !strings.HasPrefix(t, "glpat-") && !strings.HasPrefix(t, "gho_") && !strings.HasPrefix(t, "ghu_") && !strings.HasPrefix(t, "ghs_") {
-		return t // Token seems to be a valid Bearer token already
-	}
-
-	cred := os.Getenv("GITHUB_TOKEN")
-	if cred == "" {
-		cred = os.Getenv("GH_TOKEN")
-	}
-	if cred == "" {
-		cred = os.Getenv("GITLAB_TOKEN")
-	}
-	if cred == "" {
-		cred = os.Getenv("oci_token")
-	}
-
-	if cred == "" {
+	token, _ := auth.ResolveRegistryToken(registry)
+	
+	if token == "" {
 		return ""
 	}
 
 	username := os.Getenv("AEROFLARE_GIT_USERNAME")
 
 	// Try to exchange it
-	exchanged, err := ExchangeToken(registry, repository, username, cred)
+	exchanged, err := ExchangeToken(registry, repository, username, token)
 	if err == nil && exchanged != "" {
 		return exchanged
 	}
@@ -118,7 +106,7 @@ func GetToken(registry, repository string) string {
 		fmt.Fprintf(os.Stderr, "DEBUG ExchangeToken error: %v\n", err)
 	}
 
-	return cred // Fallback
+	return token // Fallback
 }
 
 func GetRegistryAndRepository() (string, string) {
