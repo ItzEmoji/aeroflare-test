@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"aeroflare/src/auth"
 	"aeroflare/src/secrets"
 )
 
@@ -15,27 +16,12 @@ func isTerminal() bool {
 	return (stat.Mode() & os.ModeCharDevice) != 0
 }
 
-func GetGithubToken() string {
+func RequireGithubToken() string {
 	if globalGithubToken != "" {
 		return globalGithubToken
 	}
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-		return token
-	}
-	if token := os.Getenv("GH_TOKEN"); token != "" {
-		return token
-	}
 	
-	manager := getSecretsManager()
-	if token, err := manager.Get("github-token"); err == nil && token != "" {
-		return token
-	}
-	return ""
-}
-
-func RequireGithubToken() string {
-	token := GetGithubToken()
-	if token != "" {
+	if token, err := auth.ResolveGithubToken(); err == nil && token != "" {
 		return token
 	}
 	
@@ -53,15 +39,9 @@ func RequireGitlabToken() string {
 	if globalGitlabToken != "" {
 		return globalGitlabToken
 	}
-	if token := os.Getenv("GITLAB_TOKEN"); token != "" {
-		return token
-	}
 	
-	manager := getSecretsManager()
-	if token, err := manager.Get("gitlab-token"); err == nil && token != "" {
+	if token, err := auth.ResolveGitlabToken(); err == nil && token != "" {
 		return token
-	} else if err != nil && err != secrets.ErrNotFound {
-		fmt.Fprintf(os.Stderr, "Warning: failed to read from keychain: %v\n", err)
 	}
 	
 	if isTerminal() {
@@ -155,19 +135,15 @@ func getTokenForRegistry(registry string) string {
 }
 
 func getOptionalTokenForRegistry(registry string) string {
-	if registry == "ghcr.io" {
-		token := GetGithubToken()
-		if token != "" {
-			os.Setenv("oci_token", token)
+	if registry == "" {
+		return ""
+	}
+	token, _ := auth.ResolveRegistryToken(registry)
+	if token != "" {
+		os.Setenv("oci_token", token)
+		if registry == "ghcr.io" {
 			os.Setenv("GITHUB_TOKEN", token)
 		}
-		return token
-	} else if registry != "" {
-		_, token := GetOCIToken(registry)
-		if token != "" {
-			os.Setenv("oci_token", token)
-		}
-		return token
 	}
-	return ""
+	return token
 }
