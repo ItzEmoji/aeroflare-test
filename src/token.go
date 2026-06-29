@@ -2,6 +2,7 @@ package network
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -88,10 +89,17 @@ func ExchangeToken(registry, repository, username, basicAuthToken string) (strin
 
 // GetToken attempts to get a valid token, exchanging a GitHub/GitLab PAT if necessary
 func GetToken(registry, repository string) string {
-	token, _ := auth.ResolveRegistryToken(registry)
+	token, err := auth.ResolveRegistryToken(registry)
+	if err != nil && !errors.Is(err, auth.ErrTokenNotFound) {
+		fmt.Fprintf(os.Stderr, "Warning: failed to resolve registry token: %v\n", err)
+	}
 	
 	if token == "" {
 		return ""
+	}
+
+	if !strings.HasPrefix(token, "ghp_") && !strings.HasPrefix(token, "github_pat_") && !strings.HasPrefix(token, "glpat-") && !strings.HasPrefix(token, "gho_") && !strings.HasPrefix(token, "ghu_") && !strings.HasPrefix(token, "ghs_") {
+		return token // Token seems to be a valid Bearer token already
 	}
 
 	username := os.Getenv("AEROFLARE_GIT_USERNAME")
