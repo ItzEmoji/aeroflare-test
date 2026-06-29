@@ -155,11 +155,24 @@ func TestResolveRegistryToken_Gitlab(t *testing.T) {
 	}
 }
 
-func TestResolveRegistryToken_GenericOCI(t *testing.T) {
-	t.Setenv("oci_token", "test-oci-token")
+func TestResolveGithubToken_GHToken(t *testing.T) {
+	t.Setenv("GH_TOKEN", "test-gh-token-short")
 
-	token, err := auth.ResolveRegistryToken("docker.io")
-	if err != nil || token != "test-oci-token" {
-		t.Errorf("expected test-oci-token for docker.io, got %s, err: %v", token, err)
+	token, err := auth.ResolveGithubToken()
+	if err != nil || token != "test-gh-token-short" {
+		t.Errorf("expected test-gh-token-short, got %s, err: %v", token, err)
+	}
+}
+
+func TestResolveRegistryToken_GenericOCI(t *testing.T) {
+	mock := &mockSecretsManager{
+		data: map[string]string{
+			"oci-docker.io-token": "test-oci-secret-token",
+		},
+	}
+
+	token, err := auth.ResolveRegistryToken("docker.io", mock)
+	if err != nil || token != "test-oci-secret-token" {
+		t.Errorf("expected test-oci-secret-token for docker.io, got %s, err: %v", token, err)
 	}
 }

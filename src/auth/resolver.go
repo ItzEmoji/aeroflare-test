@@ -62,26 +62,35 @@ func (r *Resolver) Resolve() (string, error) {
 	return "", ErrTokenNotFound
 }
 
-func ResolveGithubToken() (string, error) {
-	return NewResolver("github-token").
-		WithEnv("GITHUB_TOKEN", "GH_TOKEN").
-		Resolve()
+func ResolveGithubToken(mgrs ...secrets.Manager) (string, error) {
+	resolver := NewResolver("github-token").
+		WithEnv("GITHUB_TOKEN", "GH_TOKEN")
+	if len(mgrs) > 0 {
+		resolver = resolver.withSecretsManager(mgrs[0])
+	}
+	return resolver.Resolve()
 }
 
-func ResolveGitlabToken() (string, error) {
-	return NewResolver("gitlab-token").
-		WithEnv("GITLAB_TOKEN").
-		Resolve()
+func ResolveGitlabToken(mgrs ...secrets.Manager) (string, error) {
+	resolver := NewResolver("gitlab-token").
+		WithEnv("GITLAB_TOKEN")
+	if len(mgrs) > 0 {
+		resolver = resolver.withSecretsManager(mgrs[0])
+	}
+	return resolver.Resolve()
 }
 
-func ResolveRegistryToken(registry string) (string, error) {
+func ResolveRegistryToken(registry string, mgrs ...secrets.Manager) (string, error) {
 	if registry == "ghcr.io" {
-		return ResolveGithubToken()
+		return ResolveGithubToken(mgrs...)
 	} else if registry == "registry.gitlab.com" {
-		return ResolveGitlabToken()
+		return ResolveGitlabToken(mgrs...)
 	}
 	// Note: We use WithEnv here in case an explicit oci_token is provided for generic registries
-	return NewResolver(fmt.Sprintf("oci-%s-token", registry)).
-		WithEnv("oci_token").
-		Resolve()
+	resolver := NewResolver(fmt.Sprintf("oci-%s-token", registry)).
+		WithEnv("oci_token")
+	if len(mgrs) > 0 {
+		resolver = resolver.withSecretsManager(mgrs[0])
+	}
+	return resolver.Resolve()
 }
