@@ -96,16 +96,6 @@ func countSteps(cfg *InitConfig) int {
 // createOCIRepository pushes an initial config manifest, which auto-creates
 // the package on registries like ghcr.io.
 func createOCIRepository(cfg *InitConfig) error {
-	// network.GetToken relies on GITHUB_TOKEN/GH_TOKEN/GITLAB_TOKEN env vars.
-	// We inject the token we just obtained from the wizard.
-	if cfg.GitToken != "" {
-		_ = os.Setenv("GITHUB_TOKEN", cfg.GitToken)
-		_ = os.Setenv("GITLAB_TOKEN", cfg.GitToken)
-		if cfg.GitUsername != "" {
-			_ = os.Setenv("AEROFLARE_GIT_USERNAME", cfg.GitUsername)
-		}
-	}
-
 	if cfg.Registry == "registry.gitlab.com" && cfg.GitProvider == GitGitLab {
 		if err := ensureGitLabProjectExists(cfg.GitToken, cfg.CacheName); err != nil {
 			return fmt.Errorf("ensure GitLab project exists: %w", err)
