@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"aeroflare/src/auth"
-	"aeroflare/src/secrets"
 )
 
 func isTerminal() bool {
@@ -21,7 +20,7 @@ func RequireGithubToken() string {
 		return globalGithubToken
 	}
 	
-	if token, err := auth.ResolveGithubToken(); err == nil && token != "" {
+	if token, err := auth.ResolveGithubToken(getSecretsManager()); err == nil && token != "" {
 		return token
 	}
 	
@@ -40,7 +39,7 @@ func RequireGitlabToken() string {
 		return globalGitlabToken
 	}
 	
-	if token, err := auth.ResolveGitlabToken(); err == nil && token != "" {
+	if token, err := auth.ResolveGitlabToken(getSecretsManager()); err == nil && token != "" {
 		return token
 	}
 	
@@ -55,32 +54,20 @@ func RequireGitlabToken() string {
 }
 
 func RequireCloudflareToken() (string, string) {
-	manager := getSecretsManager()
-
 	apiToken := globalCfToken
 	if apiToken == "" {
-		if t := os.Getenv("CLOUDFLARE_API_TOKEN"); t != "" {
-			apiToken = t
-		} else {
-			if t, err := manager.Get("cf-token"); err == nil && t != "" {
-				apiToken = t
-			} else if err != nil && err != secrets.ErrNotFound {
-				fmt.Fprintf(os.Stderr, "Warning: failed to read from keychain: %v\n", err)
-			}
-		}
+		apiToken, _ = auth.NewResolver("cf-token").
+			WithEnv("CLOUDFLARE_API_TOKEN").
+			WithSecretsManager(getSecretsManager()).
+			Resolve()
 	}
 	
 	userID := globalCfUserID
 	if userID == "" {
-		if u := os.Getenv("CLOUDFLARE_ACCOUNT_ID"); u != "" {
-			userID = u
-		} else {
-			if u, err := manager.Get("cf-user-id"); err == nil && u != "" {
-				userID = u
-			} else if err != nil && err != secrets.ErrNotFound {
-				fmt.Fprintf(os.Stderr, "Warning: failed to read from keychain: %v\n", err)
-			}
-		}
+		userID, _ = auth.NewResolver("cf-user-id").
+			WithEnv("CLOUDFLARE_ACCOUNT_ID").
+			WithSecretsManager(getSecretsManager()).
+			Resolve()
 	}
 	
 	if apiToken != "" && userID != "" {
@@ -98,9 +85,12 @@ func RequireCloudflareToken() (string, string) {
 }
 
 func GetOCIToken(registry string) (string, string) {
-	manager := getSecretsManager()
-	user, _ := manager.Get(fmt.Sprintf("oci-%s-username", registry))
-	pass, _ := manager.Get(fmt.Sprintf("oci-%s-token", registry))
+	user, _ := auth.NewResolver(fmt.Sprintf("oci-%s-username", registry)).
+		WithSecretsManager(getSecretsManager()).
+		Resolve()
+	pass, _ := auth.NewResolver(fmt.Sprintf("oci-%s-token", registry)).
+		WithSecretsManager(getSecretsManager()).
+		Resolve()
 	return user, pass
 }
 
@@ -138,7 +128,7 @@ func getOptionalTokenForRegistry(registry string) string {
 	if registry == "" {
 		return ""
 	}
-	token, _ := auth.ResolveRegistryToken(registry)
+	token, _ := auth.ResolveRegistryToken(registry, getSecretsManager())
 	if token != "" {
 		os.Setenv("oci_token", token)
 		if registry == "ghcr.io" {

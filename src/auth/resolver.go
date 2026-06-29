@@ -21,7 +21,7 @@ func NewResolver(secretKey string) *Resolver {
 	return &Resolver{secretKey: secretKey}
 }
 
-func (r *Resolver) withSecretsManager(manager secrets.Manager) *Resolver {
+func (r *Resolver) WithSecretsManager(manager secrets.Manager) *Resolver {
 	r.secretsManager = manager
 	return r
 }
@@ -66,7 +66,7 @@ func ResolveGithubToken(mgrs ...secrets.Manager) (string, error) {
 	resolver := NewResolver("github-token").
 		WithEnv("GITHUB_TOKEN", "GH_TOKEN")
 	if len(mgrs) > 0 {
-		resolver = resolver.withSecretsManager(mgrs[0])
+		resolver = resolver.WithSecretsManager(mgrs[0])
 	}
 	return resolver.Resolve()
 }
@@ -75,7 +75,7 @@ func ResolveGitlabToken(mgrs ...secrets.Manager) (string, error) {
 	resolver := NewResolver("gitlab-token").
 		WithEnv("GITLAB_TOKEN")
 	if len(mgrs) > 0 {
-		resolver = resolver.withSecretsManager(mgrs[0])
+		resolver = resolver.WithSecretsManager(mgrs[0])
 	}
 	return resolver.Resolve()
 }
@@ -90,7 +90,7 @@ func ResolveRegistryToken(registry string, mgrs ...secrets.Manager) (string, err
 	resolver := NewResolver(fmt.Sprintf("oci-%s-token", registry)).
 		WithEnv("oci_token")
 	if len(mgrs) > 0 {
-		resolver = resolver.withSecretsManager(mgrs[0])
+		resolver = resolver.WithSecretsManager(mgrs[0])
 	}
 	return resolver.Resolve()
 }
