@@ -31,7 +31,7 @@ func RequestDeviceCode(clientID string) (*DeviceCodeResponse, error) {
 func requestDeviceCode(clientID, baseURL string) (*DeviceCodeResponse, error) {
 	reqBodyBytes, err := json.Marshal(DeviceCodeRequest{
 		ClientID: clientID,
-		Scope:    "repo write:packages",
+		Scope:    "repo workflow write:packages read:packages",
 	})
 	if err != nil {
 		return nil, err
