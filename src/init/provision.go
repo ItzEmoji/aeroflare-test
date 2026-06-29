@@ -284,8 +284,9 @@ jobs:
 	for _, c := range cmds {
 		cmd := exec.Command(c[0], c[1:]...)
 		cmd.Dir = tmpDir
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("git %s failed: %w", c[1], err)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("git %s failed: %w\nOutput: %s", c[1], err, strings.TrimSpace(string(out)))
 		}
 	}
 

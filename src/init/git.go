@@ -121,7 +121,7 @@ func createGitHubRepo(token, repoName string) (string, error) {
 	_ = json.Unmarshal(respBody, &result)
 
 	// Embed token in clone URL for authenticated push.
-	cloneURL := strings.Replace(result.CloneURL, "https://", fmt.Sprintf("https://%s@", token), 1)
+	cloneURL := strings.Replace(result.CloneURL, "https://", fmt.Sprintf("https://x-access-token:%s@", token), 1)
 	return cloneURL, nil
 }
 
