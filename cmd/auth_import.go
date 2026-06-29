@@ -26,7 +26,20 @@ var authImportCmd = &cobra.Command{
 				token := strings.TrimSpace(string(out))
 				if token != "" {
 					if err := manager.Set("github-token", token); err == nil {
-						fmt.Println("✅ Imported GitHub token from gh CLI")
+						msg := "✅ Imported GitHub token from gh CLI"
+						if _, scopes := getGithubUser(token); scopes != nil {
+							hasWritePackages := false
+							for _, s := range scopes {
+								if s == "write:packages" {
+									hasWritePackages = true
+									break
+								}
+							}
+							if !hasWritePackages {
+								msg += " (⚠️ Warning: Token is missing 'write:packages' scope, pushing to GHCR will fail)"
+							}
+						}
+						fmt.Println(msg)
 						imported++
 					}
 				}

@@ -52,8 +52,18 @@ var authListCmd = &cobra.Command{
 
 			if key == "github-token" {
 				info := "Token"
-				if user := getGithubUser(val); user != "" {
+				if user, scopes := getGithubUser(val); user != "" {
 					info = "Username: " + user
+					hasWritePackages := false
+					for _, s := range scopes {
+						if s == "write:packages" {
+							hasWritePackages = true
+							break
+						}
+					}
+					if !hasWritePackages {
+						info += " (⚠️ Missing write:packages scope)"
+					}
 				}
 				entries = append(entries, Entry{Service: "GitHub", Info: info, Key: key})
 			} else if key == "gitlab-token" {
@@ -129,26 +139,35 @@ func init() {
 	authListCmd.Flags().BoolVar(&authListJson, "json", false, "Export credentials list as JSON")
 }
 
-func getGithubUser(token string) string {
+func getGithubUser(token string) (string, []string) {
 	client := &http.Client{Timeout: 2 * time.Second}
 	req, err := http.NewRequest("GET", "https://api.github.com/user", nil)
 	if err != nil {
-		return ""
+		return "", nil
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := client.Do(req)
 	if err != nil || resp.StatusCode != 200 {
-		return ""
+		return "", nil
 	}
 	defer resp.Body.Close()
+
+	scopesStr := resp.Header.Get("X-OAuth-Scopes")
+	var scopes []string
+	for _, s := range strings.Split(scopesStr, ",") {
+		s = strings.TrimSpace(s)
+		if s != "" {
+			scopes = append(scopes, s)
+		}
+	}
 
 	var data struct {
 		Login string `json:"login"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return ""
+		return "", nil
 	}
-	return data.Login
+	return data.Login, scopes
 }
 
 func getGitlabUser(token string) string {
