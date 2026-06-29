@@ -156,6 +156,7 @@ func TestResolveRegistryToken_Gitlab(t *testing.T) {
 }
 
 func TestResolveGithubToken_GHToken(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "")
 	t.Setenv("GH_TOKEN", "test-gh-token-short")
 
 	token, err := auth.ResolveGithubToken()
@@ -165,6 +166,7 @@ func TestResolveGithubToken_GHToken(t *testing.T) {
 }
 
 func TestResolveRegistryToken_GenericOCI(t *testing.T) {
+	t.Setenv("oci_token", "")
 	mock := &mockSecretsManager{
 		data: map[string]string{
 			"oci-docker.io-token": "test-oci-secret-token",
@@ -178,6 +180,8 @@ func TestResolveRegistryToken_GenericOCI(t *testing.T) {
 }
 
 func TestResolveGithubToken_WithManager(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("GH_TOKEN", "")
 	mock := &mockSecretsManager{
 		data: map[string]string{
 			"github-token": "mock-gh-token",
@@ -190,6 +194,7 @@ func TestResolveGithubToken_WithManager(t *testing.T) {
 }
 
 func TestResolveGitlabToken_WithManager(t *testing.T) {
+	t.Setenv("GITLAB_TOKEN", "")
 	mock := &mockSecretsManager{
 		data: map[string]string{
 			"gitlab-token": "mock-gl-token",
@@ -210,6 +215,8 @@ func TestResolveRegistryToken_OCIEnvVar(t *testing.T) {
 }
 
 func TestResolveRegistryToken_GithubWithManager(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("GH_TOKEN", "")
 	mock := &mockSecretsManager{
 		data: map[string]string{
 			"github-token": "mock-ghcr-token",
@@ -222,6 +229,7 @@ func TestResolveRegistryToken_GithubWithManager(t *testing.T) {
 }
 
 func TestResolveRegistryToken_GitlabWithManager(t *testing.T) {
+	t.Setenv("GITLAB_TOKEN", "")
 	mock := &mockSecretsManager{
 		data: map[string]string{
 			"gitlab-token": "mock-gitlab-registry-token",
