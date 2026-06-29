@@ -55,14 +55,24 @@ var authListCmd = &cobra.Command{
 				if user, scopes := getGithubUser(val); user != "" {
 					info = "Username: " + user
 					hasWritePackages := false
+					hasWorkflow := false
 					for _, s := range scopes {
 						if s == "write:packages" {
 							hasWritePackages = true
-							break
+						}
+						if s == "workflow" {
+							hasWorkflow = true
 						}
 					}
+					var warnings []string
 					if !hasWritePackages {
-						info += " (⚠️ Missing write:packages scope)"
+						warnings = append(warnings, "write:packages")
+					}
+					if !hasWorkflow {
+						warnings = append(warnings, "workflow")
+					}
+					if len(warnings) > 0 {
+						info += fmt.Sprintf(" (⚠️ Missing scopes: %s)", strings.Join(warnings, ", "))
 					}
 				}
 				entries = append(entries, Entry{Service: "GitHub", Info: info, Key: key})

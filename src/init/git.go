@@ -160,7 +160,7 @@ func createGitLabRepo(token, repoName string) (string, error) {
 
 // githubDeviceFlow authenticates via GitHub OAuth Device Flow.
 func githubDeviceFlow() string {
-	reqBody := strings.NewReader(fmt.Sprintf("client_id=%s&scope=repo write:packages read:packages", githubOAuthClientID))
+	reqBody := strings.NewReader(fmt.Sprintf("client_id=%s&scope=repo workflow write:packages read:packages", githubOAuthClientID))
 	req, err := http.NewRequest("POST", "https://github.com/login/device/code", reqBody)
 	if err != nil {
 		return ""
