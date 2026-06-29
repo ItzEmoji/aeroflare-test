@@ -3,12 +3,12 @@ package setup
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 
+	"aeroflare/src/auth"
+	"aeroflare/src/ui"
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/viper"
-	"aeroflare/src/ui"
 )
 
 // RunWizard collects all configuration from the user through an interactive wizard.
@@ -159,11 +159,11 @@ func promptCredentials(cfg *InitConfig) error {
 	// Cloudflare credentials are always required (we deploy a Worker).
 	cfg.CloudflareAccountID = viper.GetString("cloudflare-account-id")
 	if cfg.CloudflareAccountID == "" {
-		cfg.CloudflareAccountID = os.Getenv("CLOUDFLARE_ACCOUNT_ID")
+		cfg.CloudflareAccountID, _ = auth.NewResolver("cf-user-id").WithEnv("CLOUDFLARE_ACCOUNT_ID").Resolve()
 	}
 	cfg.CloudflareToken = viper.GetString("cloudflare-api-token")
 	if cfg.CloudflareToken == "" {
-		cfg.CloudflareToken = os.Getenv("CLOUDFLARE_API_TOKEN")
+		cfg.CloudflareToken, _ = auth.NewResolver("cf-token").WithEnv("CLOUDFLARE_API_TOKEN").Resolve()
 	}
 
 	// Git token detection.

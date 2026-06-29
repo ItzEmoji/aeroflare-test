@@ -9,26 +9,29 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
+	"aeroflare/src/auth"
 	"golang.org/x/crypto/nacl/box"
 )
 
 const githubOAuthClientID = "Ov23liIJyLpd2Cse5gne"
 
-// detectGitHubToken returns a GitHub token from common environment variables.
+// detectGitHubToken returns a GitHub token from common environment variables or secrets manager.
 func detectGitHubToken() string {
-	if t := os.Getenv("GITHUB_TOKEN"); t != "" {
+	if t, _ := auth.ResolveGithubToken(); t != "" {
 		return t
 	}
-	return os.Getenv("GH_TOKEN")
+	return ""
 }
 
-// detectGitLabToken returns a GitLab token from the environment.
+// detectGitLabToken returns a GitLab token from the environment or secrets manager.
 func detectGitLabToken() string {
-	return os.Getenv("GITLAB_TOKEN")
+	if t, _ := auth.ResolveGitlabToken(); t != "" {
+		return t
+	}
+	return ""
 }
 
 // getGitHubUsername fetches the authenticated user's login.
