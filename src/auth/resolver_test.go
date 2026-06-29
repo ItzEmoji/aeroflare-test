@@ -176,3 +176,60 @@ func TestResolveRegistryToken_GenericOCI(t *testing.T) {
 		t.Errorf("expected test-oci-secret-token for docker.io, got %s, err: %v", token, err)
 	}
 }
+
+func TestResolveGithubToken_WithManager(t *testing.T) {
+	mock := &mockSecretsManager{
+		data: map[string]string{
+			"github-token": "mock-gh-token",
+		},
+	}
+	token, err := auth.ResolveGithubToken(mock)
+	if err != nil || token != "mock-gh-token" {
+		t.Errorf("expected mock-gh-token, got %s, err: %v", token, err)
+	}
+}
+
+func TestResolveGitlabToken_WithManager(t *testing.T) {
+	mock := &mockSecretsManager{
+		data: map[string]string{
+			"gitlab-token": "mock-gl-token",
+		},
+	}
+	token, err := auth.ResolveGitlabToken(mock)
+	if err != nil || token != "mock-gl-token" {
+		t.Errorf("expected mock-gl-token, got %s, err: %v", token, err)
+	}
+}
+
+func TestResolveRegistryToken_OCIEnvVar(t *testing.T) {
+	t.Setenv("oci_token", "test-val")
+	token, err := auth.ResolveRegistryToken("docker.io")
+	if err != nil || token != "test-val" {
+		t.Errorf("expected test-val for docker.io via oci_token env var, got %s, err: %v", token, err)
+	}
+}
+
+func TestResolveRegistryToken_GithubWithManager(t *testing.T) {
+	mock := &mockSecretsManager{
+		data: map[string]string{
+			"github-token": "mock-ghcr-token",
+		},
+	}
+	token, err := auth.ResolveRegistryToken("ghcr.io", mock)
+	if err != nil || token != "mock-ghcr-token" {
+		t.Errorf("expected mock-ghcr-token for ghcr.io, got %s, err: %v", token, err)
+	}
+}
+
+func TestResolveRegistryToken_GitlabWithManager(t *testing.T) {
+	mock := &mockSecretsManager{
+		data: map[string]string{
+			"gitlab-token": "mock-gitlab-registry-token",
+		},
+	}
+	token, err := auth.ResolveRegistryToken("registry.gitlab.com", mock)
+	if err != nil || token != "mock-gitlab-registry-token" {
+		t.Errorf("expected mock-gitlab-registry-token for registry.gitlab.com, got %s, err: %v", token, err)
+	}
+}
+
