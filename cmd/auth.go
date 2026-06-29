@@ -2,7 +2,10 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
+	
 	"aeroflare/src/secrets"
+	"aeroflare/src/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -73,10 +76,43 @@ var authListCmd = &cobra.Command{
 			return nil
 		}
 		
-		fmt.Println("Saved credentials:")
+		var rows [][]string
 		for _, key := range keys {
-			fmt.Printf(" - %s\n", key)
+			service := "Custom"
+			info := "Secret"
+
+			if key == "github-token" {
+				service = "GitHub"
+				info = "Token"
+			} else if key == "gitlab-token" {
+				service = "GitLab"
+				info = "Token"
+			} else if key == "cf-token" {
+				service = "Cloudflare"
+				info = "API Token"
+			} else if key == "cf-user-id" {
+				service = "Cloudflare"
+				info = "Account ID"
+			} else if strings.HasPrefix(key, "oci-") {
+				service = "OCI Registry"
+				parts := strings.Split(key, "-")
+				if len(parts) >= 3 {
+					// oci-<registry>-username or oci-<registry>-token
+					registry := strings.Join(parts[1:len(parts)-1], "-")
+					suffix := parts[len(parts)-1]
+					if suffix == "username" {
+						info = "Username (" + registry + ")"
+					} else if suffix == "token" {
+						info = "Token (" + registry + ")"
+					}
+				}
+			}
+
+			rows = append(rows, []string{service, info, key})
 		}
+
+		fmt.Println("Saved credentials:")
+		ui.PrintTable([]string{"Service", "Info", "Key"}, rows)
 		return nil
 	},
 }
