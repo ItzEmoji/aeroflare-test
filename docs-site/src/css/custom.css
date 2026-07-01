@@ -1,30 +1,132 @@
+/* Import a premium font */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&display=swap');
+
 /**
  * Any CSS included here will be global. The classic template
  * bundles Infima by default. Infima is a CSS framework designed to
  * work well for content-centric websites.
  */
 
-/* You can override the default Infima variables here. */
 :root {
-  --ifm-color-primary: #2e8555;
-  --ifm-color-primary-dark: #29784c;
-  --ifm-color-primary-darker: #277148;
-  --ifm-color-primary-darkest: #205d3b;
-  --ifm-color-primary-light: #33925d;
-  --ifm-color-primary-lighter: #359962;
-  --ifm-color-primary-lightest: #3cad6e;
+  --ifm-font-family-base: 'Inter', system-ui, -apple-system, sans-serif;
+  --ifm-heading-font-family: 'Outfit', 'Inter', system-ui, sans-serif;
+  
+  /* Vibrant accent color (cyan/blue) */
+  --ifm-color-primary: #00d2ff;
+  --ifm-color-primary-dark: #00bce6;
+  --ifm-color-primary-darker: #00b2d9;
+  --ifm-color-primary-darkest: #0092b3;
+  --ifm-color-primary-light: #33dbff;
+  --ifm-color-primary-lighter: #4cdfff;
+  --ifm-color-primary-lightest: #99eeff;
+  
   --ifm-code-font-size: 95%;
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
 }
 
-/* For readability concerns, you should choose a lighter palette in dark mode. */
+/* Dark mode overrides for a sleek, premium feel */
 [data-theme='dark'] {
-  --ifm-color-primary: #25c2a0;
-  --ifm-color-primary-dark: #21af90;
-  --ifm-color-primary-darker: #1fa588;
-  --ifm-color-primary-darkest: #1a8870;
-  --ifm-color-primary-light: #29d5b0;
-  --ifm-color-primary-lighter: #32d8b4;
-  --ifm-color-primary-lightest: #4fddbf;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  --ifm-color-primary: #00d2ff;
+  --ifm-color-primary-dark: #00bce6;
+  --ifm-color-primary-darker: #00b2d9;
+  --ifm-color-primary-darkest: #0092b3;
+  --ifm-color-primary-light: #33dbff;
+  --ifm-color-primary-lighter: #4cdfff;
+  --ifm-color-primary-lightest: #99eeff;
+  
+  --ifm-background-color: #0b0f19; /* Very dark blue, almost black */
+  --ifm-background-surface-color: #111827; /* Slightly lighter for cards */
+  --ifm-color-content: #e5e7eb;
+  
+  --docusaurus-highlighted-code-line-bg: rgba(0, 210, 255, 0.1);
+}
+
+/* Utility classes for the landing page */
+.hero-gradient-bg {
+  background: radial-gradient(circle at 50% 0%, rgba(0, 210, 255, 0.12) 0%, rgba(11, 15, 25, 0) 50%);
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-card {
+  background: rgba(17, 24, 39, 0.5);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+  transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.4s ease, border-color 0.4s ease;
+}
+
+.glass-card:hover {
+  transform: translateY(-8px);
+  border-color: rgba(0, 210, 255, 0.4);
+  box-shadow: 0 16px 40px 0 rgba(0, 210, 255, 0.15);
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hero-button {
+  background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%);
+  color: white !important;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 14px 32px;
+  text-decoration: none;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(0, 210, 255, 0.3);
+  display: inline-block;
+  font-size: 1.1rem;
+}
+
+.hero-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 210, 255, 0.5);
+  color: white;
+  text-decoration: none;
+}
+
+.hero-button-secondary {
+  background: rgba(255, 255, 255, 0.05);
+  color: #e5e7eb !important;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 14px 32px;
+  text-decoration: none;
+  transition: all 0.3s ease;
+  display: inline-block;
+  font-size: 1.1rem;
+}
+
+.hero-button-secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: white;
+  text-decoration: none;
+}
+
+/* Code block terminal style */
+.terminal-block {
+  background: #050811;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 24px;
+  font-family: var(--ifm-font-family-monospace);
+  color: #a3aed2;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+  text-align: left;
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.terminal-prompt {
+  color: #00d2ff;
+  user-select: none;
+  margin-right: 12px;
 }
