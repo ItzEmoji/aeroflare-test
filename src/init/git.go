@@ -9,26 +9,29 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
+	"aeroflare/src/auth"
 	"golang.org/x/crypto/nacl/box"
 )
 
 const githubOAuthClientID = "Ov23liIJyLpd2Cse5gne"
 
-// detectGitHubToken returns a GitHub token from common environment variables.
+// detectGitHubToken returns a GitHub token from common environment variables or secrets manager.
 func detectGitHubToken() string {
-	if t := os.Getenv("GITHUB_TOKEN"); t != "" {
+	if t, _ := auth.ResolveGithubToken(); t != "" {
 		return t
 	}
-	return os.Getenv("GH_TOKEN")
+	return ""
 }
 
-// detectGitLabToken returns a GitLab token from the environment.
+// detectGitLabToken returns a GitLab token from the environment or secrets manager.
 func detectGitLabToken() string {
-	return os.Getenv("GITLAB_TOKEN")
+	if t, _ := auth.ResolveGitlabToken(); t != "" {
+		return t
+	}
+	return ""
 }
 
 // getGitHubUsername fetches the authenticated user's login.
@@ -118,7 +121,7 @@ func createGitHubRepo(token, repoName string) (string, error) {
 	_ = json.Unmarshal(respBody, &result)
 
 	// Embed token in clone URL for authenticated push.
-	cloneURL := strings.Replace(result.CloneURL, "https://", fmt.Sprintf("https://%s@", token), 1)
+	cloneURL := strings.Replace(result.CloneURL, "https://", fmt.Sprintf("https://x-access-token:%s@", token), 1)
 	return cloneURL, nil
 }
 
@@ -157,7 +160,7 @@ func createGitLabRepo(token, repoName string) (string, error) {
 
 // githubDeviceFlow authenticates via GitHub OAuth Device Flow.
 func githubDeviceFlow() string {
-	reqBody := strings.NewReader(fmt.Sprintf("client_id=%s&scope=repo write:packages read:packages", githubOAuthClientID))
+	reqBody := strings.NewReader(fmt.Sprintf("client_id=%s&scope=repo workflow write:packages read:packages", githubOAuthClientID))
 	req, err := http.NewRequest("POST", "https://github.com/login/device/code", reqBody)
 	if err != nil {
 		return ""

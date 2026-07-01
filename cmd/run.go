@@ -24,7 +24,8 @@ var runCmd = &cobra.Command{
 
 		run.DisplaySummary(cfg)
 
-		targetPaths, err := run.ExecuteCommand(cfg, registry, repository, indexDir, getGithubToken())
+		token := getTokenForRegistry(registry)
+		targetPaths, err := run.ExecuteCommand(cfg, registry, repository, indexDir, token)
 		if err != nil {
 			PrintError(err.Error())
 			os.Exit(1)
@@ -68,7 +69,7 @@ var runCmd = &cobra.Command{
 func init() {
 	// Re-use push flags
 	runCmd.Flags().StringVar(&pushCompression, "compression", "zstd", "Compression type: zstd, xz, gzip, none")
-	runCmd.Flags().StringVar(&pushCacheURL, "cache-url", "https://cache.nixos.org", "Upstream binary cache URL")
+	runCmd.Flags().StringVar(&pushCacheURL, "upstream-cache", "https://cache.nixos.org", "Upstream binary cache URL")
 	runCmd.Flags().IntVar(&pushWorkers, "workers", 50, "Number of concurrent workers")
 	runCmd.Flags().BoolVar(&pushPrepareRefs, "prepare-refs", true, "Also prepare references")
 	runCmd.Flags().StringVar(&pushSigningKey, "signing-key", "", "Path to Nix signing private key file")

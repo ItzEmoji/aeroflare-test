@@ -2,6 +2,7 @@ package network
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,13 +11,20 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/viper"
 	"aeroflare/src/proxy"
+	"aeroflare/src/auth"
+	"github.com/google/go-containerregistry/pkg/name"
 )
 
 // ExchangeToken performs a token exchange for a given OCI registry.
 // Some registries (like ghcr.io) require Basic auth token exchange to get a Bearer token.
 // repository should be the full repository path (e.g. "itzemoji/nix-cache-test/nix-cache")
 func ExchangeToken(registry, repository, username, basicAuthToken string) (string, error) {
+	if reg, err := name.NewRegistry(registry); err == nil {
+		registry = reg.RegistryStr()
+	}
+
 	proto := proxy.GetProtocol(registry)
 
 	// Discover realm and service via /v2/ endpoint
@@ -85,26 +93,39 @@ func ExchangeToken(registry, repository, username, basicAuthToken string) (strin
 }
 
 // GetToken attempts to get a valid token, exchanging a GitHub/GitLab PAT if necessary
-func GetToken(registry, repository string) string {
-	if t := os.Getenv("oci_token"); t != "" && !strings.HasPrefix(t, "ghp_") && !strings.HasPrefix(t, "github_pat_") && !strings.HasPrefix(t, "glpat-") {
-		return t // Token seems to be a valid Bearer token already
+func GetToken(registry, repository, explicitToken string) string {
+	token := explicitToken
+	if token == "" {
+		var err error
+		token, err = auth.ResolveRegistryToken(registry)
+		if err != nil && !errors.Is(err, auth.ErrTokenNotFound) {
+			fmt.Fprintf(os.Stderr, "Warning: failed to resolve registry token: %v\n", err)
+		}
+	}
+	
+	if token == "" {
+		return ""
 	}
 
-	cred := os.Getenv("GITHUB_TOKEN")
-	if cred == "" {
-		cred = os.Getenv("GH_TOKEN")
-	}
-	if cred == "" {
-		cred = os.Getenv("GITLAB_TOKEN")
-	}
-	if cred == "" {
-		return os.Getenv("oci_token")
+	username, _ := auth.NewResolver(fmt.Sprintf("oci-%s-username", registry)).Resolve()
+	if username == "" {
+		username = os.Getenv("AEROFLARE_GIT_USERNAME")
 	}
 
-	username := os.Getenv("AEROFLARE_GIT_USERNAME")
+	isGitToken := strings.HasPrefix(token, "ghp_") || strings.HasPrefix(token, "github_pat_") || strings.HasPrefix(token, "glpat-") || strings.HasPrefix(token, "gho_") || strings.HasPrefix(token, "ghu_") || strings.HasPrefix(token, "ghs_")
+	isDockerToken := strings.HasPrefix(token, "dckr_pat_")
+	
+	// If it's a JWT, or we have no username and it doesn't look like a known PAT, assume it's already a Bearer token.
+	if strings.HasPrefix(token, "eyJ") || (!isGitToken && !isDockerToken && username == "") {
+		return token 
+	}
+
+	if username == "" {
+		username = "token"
+	}
 
 	// Try to exchange it
-	exchanged, err := ExchangeToken(registry, repository, username, cred)
+	exchanged, err := ExchangeToken(registry, repository, username, token)
 	if err == nil && exchanged != "" {
 		return exchanged
 	}
@@ -113,12 +134,11 @@ func GetToken(registry, repository string) string {
 		fmt.Fprintf(os.Stderr, "DEBUG ExchangeToken error: %v\n", err)
 	}
 
-	return cred // Fallback
+	return token // Fallback
 }
 
-// GetRegistryAndRepository computes the registry and repository from environment variables.
 func GetRegistryAndRepository() (string, string) {
-	registry := os.Getenv("AEROFLARE_REGISTRY")
+	registry := viper.GetString("registry")
 	if registry == "" {
 		registry = os.Getenv("NIXCACHE_REGISTRY")
 	}
@@ -126,7 +146,7 @@ func GetRegistryAndRepository() (string, string) {
 		registry = "ghcr.io"
 	}
 
-	ociURL := os.Getenv("AEROFLARE_OCI_URL")
+	ociURL := viper.GetString("cache-url")
 	var repository string
 
 	if ociURL != "" {
@@ -139,16 +159,20 @@ func GetRegistryAndRepository() (string, string) {
 			repository = ociURL
 		}
 	} else {
-		cacheName := os.Getenv("AEROFLARE_CACHE")
+		cacheName := viper.GetString("cache")
 		if cacheName == "" {
 			cacheName = os.Getenv("NIXCACHE_REPO")
 		}
 		if cacheName == "" {
-			fmt.Fprintln(os.Stderr, "Error: AEROFLARE_CACHE or AEROFLARE_OCI_URL environment variable is required")
+			fmt.Fprintln(os.Stderr, "Error: AEROFLARE_CACHE or AEROFLARE_CACHE_URL configuration is required")
 			os.Exit(1)
 		}
 		cacheName = strings.ToLower(cacheName)
-		repository = fmt.Sprintf("%s/nix-cache", cacheName)
+		if (registry == "docker.io" || registry == "index.docker.io" || registry == "registry-1.docker.io") && strings.Contains(cacheName, "/") {
+			repository = cacheName
+		} else {
+			repository = fmt.Sprintf("%s/nix-cache", cacheName)
+		}
 	}
 
 	return registry, repository

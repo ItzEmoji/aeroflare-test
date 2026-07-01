@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/google/go-containerregistry/pkg/name"
 )
 
 // Types for cache-index.json management
@@ -43,6 +45,9 @@ type PushReceipt struct {
 
 // FetchCacheIndex fetches the current cache-index.
 func FetchCacheIndex(registry, repository, token string) (*PushCacheIndex, error) {
+	if reg, err := name.NewRegistry(registry); err == nil {
+		registry = reg.RegistryStr()
+	}
 	scheme := "https"
 	if strings.HasPrefix(registry, "localhost:") || strings.HasPrefix(registry, "127.0.0.1:") {
 		scheme = "http"
@@ -94,6 +99,9 @@ func FetchCacheIndex(registry, repository, token string) (*PushCacheIndex, error
 // UpdateCacheIndex merges new entries into existingIndex and pushes the updated manifest.
 func UpdateCacheIndex(receipts []PushReceipt, existingIndex *PushCacheIndex, registry, repository, token, pubKeyPath string, r2Cfg *R2Config, configAnnotations map[string]string) error {
 
+	if reg, err := name.NewRegistry(registry); err == nil {
+		registry = reg.RegistryStr()
+	}
 	scheme := "https"
 	if strings.HasPrefix(registry, "localhost:") || strings.HasPrefix(registry, "127.0.0.1:") {
 		scheme = "http"
@@ -262,6 +270,9 @@ func UpdateCacheIndex(receipts []PushReceipt, existingIndex *PushCacheIndex, reg
 
 // PushConfigManifest pushes the cache-config manifest with the provided annotations.
 func PushConfigManifest(registry, repository, token string, annotations map[string]string) error {
+	if reg, err := name.NewRegistry(registry); err == nil {
+		registry = reg.RegistryStr()
+	}
 	scheme := "https"
 	if strings.HasPrefix(registry, "localhost:") || strings.HasPrefix(registry, "127.0.0.1:") {
 		scheme = "http"

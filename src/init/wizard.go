@@ -2,11 +2,14 @@ package setup
 
 import (
 	"fmt"
-	"os"
+	"net/url"
 	"strings"
 
-	"github.com/charmbracelet/huh"
+	"aeroflare/src/auth"
+	"aeroflare/src/secrets"
 	"aeroflare/src/ui"
+	"github.com/charmbracelet/huh"
+	"github.com/spf13/viper"
 )
 
 // RunWizard collects all configuration from the user through an interactive wizard.
@@ -36,48 +39,115 @@ func promptCoreSettings(cfg *InitConfig) error {
 	var backend string
 	var gitProvider string
 
-	cfg.Registry = "ghcr.io"
+	cacheURL := viper.GetString("cache-url")
+	cacheName := viper.GetString("cache")
+	registryVal := viper.GetString("registry")
 
-	err := huh.NewForm(
-		huh.NewGroup(
-			huh.NewInput().
-				Title("Cache name").
-				Description("A unique name for your binary cache (e.g. myuser/my-cache)").
-				Value(&cfg.CacheName).
-				Validate(func(s string) error {
-					if strings.TrimSpace(s) == "" {
-						return fmt.Errorf("cache name is required")
-					}
-					return nil
-				}),
-			huh.NewInput().
-				Title("OCI registry").
-				Description("Container registry for storing cache data").
-				Value(&cfg.Registry),
-		),
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Index backend").
-				Description("How should the cache index be stored?").
-				Options(
-					huh.NewOption("Cloudflare R2 (recommended)", "r2"),
-					huh.NewOption("Native OCI Tags (experimental)", "native"),
-					huh.NewOption("JSON index stored in OCI", "oci"),
-				).
-				Value(&backend),
-			huh.NewSelect[string]().
-				Title("Git integration").
-				Description("Connect a Git repository for automatic CI/CD deployments?").
-				Options(
-					huh.NewOption("None", "none"),
-					huh.NewOption("GitHub", "github"),
-					huh.NewOption("GitLab", "gitlab"),
-				).
-				Value(&gitProvider),
-		),
-	).WithTheme(AeroflareTheme()).Run()
-	if err != nil {
-		return fmt.Errorf("wizard cancelled")
+	if cacheURL != "" {
+		if strings.HasPrefix(cacheURL, "oci://") {
+			u, err := url.Parse(cacheURL)
+			if err != nil {
+				return fmt.Errorf("invalid cache-url: %w", err)
+			}
+			if u.Host != "" {
+				cfg.Registry = u.Host
+				cfg.CacheName = strings.TrimPrefix(u.Path, "/")
+			} else {
+				cfg.Registry = "custom"
+				cfg.CacheName = cacheURL
+			}
+		} else {
+			cfg.Registry = "custom"
+			cfg.CacheName = cacheURL
+		}
+	} else if cacheName != "" {
+		cfg.CacheName = cacheName
+		cfg.Registry = "ghcr.io"
+	} else {
+		cfg.Registry = "ghcr.io"
+	}
+
+	if registryVal != "" {
+		cfg.Registry = registryVal
+	}
+
+	backendVal := viper.GetString("backend")
+	if backendVal != "" {
+		if backendVal != "r2" && backendVal != "native" && backendVal != "oci" {
+			return fmt.Errorf("invalid backend configured: %s. Must be 'r2', 'native', or 'oci'", backendVal)
+		}
+		backend = backendVal
+	}
+
+	gitProviderVal := viper.GetString("git-provider")
+	if gitProviderVal != "" {
+		if gitProviderVal != "none" && gitProviderVal != "github" && gitProviderVal != "gitlab" {
+			return fmt.Errorf("invalid git provider configured: %s. Must be 'none', 'github', or 'gitlab'", gitProviderVal)
+		}
+		gitProvider = gitProviderVal
+	}
+
+	var groups []*huh.Group
+	var coreFields []huh.Field
+
+	if cfg.CacheName == "" {
+		coreFields = append(coreFields, huh.NewInput().
+			Title("Cache name").
+			Description("A unique name for your binary cache (e.g. myuser/my-cache)").
+			Value(&cfg.CacheName).
+			Validate(func(s string) error {
+				if strings.TrimSpace(s) == "" {
+					return fmt.Errorf("cache name is required")
+				}
+				return nil
+			}))
+	}
+
+	if cacheURL == "" && registryVal == "" && cacheName == "" {
+		coreFields = append(coreFields, huh.NewInput().
+			Title("OCI registry").
+			Description("Container registry for storing cache data").
+			Value(&cfg.Registry))
+	}
+
+	if len(coreFields) > 0 {
+		groups = append(groups, huh.NewGroup(coreFields...))
+	}
+
+	var secondaryFields []huh.Field
+	if backendVal == "" {
+		secondaryFields = append(secondaryFields, huh.NewSelect[string]().
+			Title("Index backend").
+			Description("How should the cache index be stored?").
+			Options(
+				huh.NewOption("Cloudflare R2 (recommended)", "r2"),
+				huh.NewOption("Native OCI Tags (experimental)", "native"),
+				huh.NewOption("JSON index stored in OCI", "oci"),
+			).
+			Value(&backend))
+	}
+
+	if gitProviderVal == "" {
+		secondaryFields = append(secondaryFields, huh.NewSelect[string]().
+			Title("Git integration").
+			Description("Connect a Git repository for automatic CI/CD deployments?").
+			Options(
+				huh.NewOption("None", "none"),
+				huh.NewOption("GitHub", "github"),
+				huh.NewOption("GitLab", "gitlab"),
+			).
+			Value(&gitProvider))
+	}
+
+	if len(secondaryFields) > 0 {
+		groups = append(groups, huh.NewGroup(secondaryFields...))
+	}
+
+	if len(groups) > 0 {
+		err := huh.NewForm(groups...).WithTheme(AeroflareTheme()).Run()
+		if err != nil {
+			return fmt.Errorf("wizard cancelled")
+		}
 	}
 
 	cfg.Backend = BackendType(backend)
@@ -88,15 +158,35 @@ func promptCoreSettings(cfg *InitConfig) error {
 // promptCredentials asks for only the credentials required by the selected options.
 func promptCredentials(cfg *InitConfig) error {
 	// Cloudflare credentials are always required (we deploy a Worker).
-	cfg.CloudflareAccountID = os.Getenv("CLOUDFLARE_ACCOUNT_ID")
-	cfg.CloudflareToken = os.Getenv("CLOUDFLARE_API_TOKEN")
+	cfg.CloudflareAccountID = viper.GetString("cloudflare-account-id")
+	if cfg.CloudflareAccountID == "" {
+		cfg.CloudflareAccountID, _ = auth.NewResolver("cf-user-id").WithEnv("CLOUDFLARE_ACCOUNT_ID").Resolve()
+	}
+	cfg.CloudflareToken = viper.GetString("cloudflare-api-token")
+	if cfg.CloudflareToken == "" {
+		cfg.CloudflareToken, _ = auth.NewResolver("cf-token").WithEnv("CLOUDFLARE_API_TOKEN").Resolve()
+	}
 
 	// Git token detection.
-	switch cfg.GitProvider {
-	case GitGitHub:
-		cfg.GitToken = detectGitHubToken()
-	case GitGitLab:
-		cfg.GitToken = detectGitLabToken()
+	cfg.GitToken = viper.GetString("git-token")
+	if cfg.GitToken == "" {
+		switch cfg.GitProvider {
+		case GitGitHub:
+			cfg.GitToken = detectGitHubToken()
+		case GitGitLab:
+			cfg.GitToken = detectGitLabToken()
+		}
+	}
+
+	// OCI token detection.
+	needsOCIToken := (cfg.Registry != "ghcr.io" || cfg.GitProvider != GitGitHub) &&
+		(cfg.Registry != "registry.gitlab.com" || cfg.GitProvider != GitGitLab)
+	
+	var ociUsername string
+	var ociToken string
+	
+	if needsOCIToken {
+		cfg.OCIToken, _ = auth.ResolveRegistryToken(cfg.Registry)
 	}
 
 	// Build the credentials form with only the fields that are missing.
@@ -159,11 +249,32 @@ func promptCredentials(cfg *InitConfig) error {
 			}))
 	}
 
+	if needsOCIToken && cfg.OCIToken == "" {
+		fields = append(fields, huh.NewInput().
+			Title(fmt.Sprintf("OCI Username for %s", cfg.Registry)).
+			Value(&ociUsername).
+			Validate(notEmpty("OCI Username")))
+
+		fields = append(fields, huh.NewInput().
+			Title(fmt.Sprintf("OCI Token / Password for %s", cfg.Registry)).
+			EchoMode(huh.EchoModePassword).
+			Value(&ociToken).
+			Validate(notEmpty("OCI Token")))
+	}
+
 	// Show the credentials form only if there are missing values.
 	if len(fields) > 0 {
 		if err := huh.NewForm(huh.NewGroup(fields...)).WithTheme(AeroflareTheme()).Run(); err != nil {
 			return fmt.Errorf("wizard cancelled")
 		}
+	}
+
+	// Save OCI credentials if provided
+	if ociToken != "" && ociUsername != "" {
+		cfg.OCIToken = ociToken
+		sm := secrets.NewManager()
+		_ = sm.Set(fmt.Sprintf("oci-%s-username", cfg.Registry), ociUsername)
+		_ = sm.Set(fmt.Sprintf("oci-%s-token", cfg.Registry), ociToken)
 	}
 
 	// Resolve Git username from token.

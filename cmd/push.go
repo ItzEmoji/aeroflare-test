@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 
+	network "aeroflare/src"
 	"aeroflare/src/push"
 	"github.com/spf13/cobra"
 )
@@ -23,6 +24,9 @@ var pushCmd = &cobra.Command{
 	Use:   "push",
 	Short: "Push a build to the cache",
 	Run: func(cmd *cobra.Command, args []string) {
+		registry, _ := network.GetRegistryAndRepository()
+		getTokenForRegistry(registry)
+
 		cfg, err := push.ParseConfig(args, pushStorePath, pushInputFile, os.Stdin)
 		if err != nil {
 			PrintError(err.Error())
@@ -57,7 +61,7 @@ func init() {
 	pushCmd.Flags().StringVar(&pushStorePath, "store-path", "", "Nix store path to prepare and push (e.g. /nix/store/xxx-yyy)")
 	pushCmd.Flags().StringVar(&pushInputFile, "input", "", "File containing store paths (one per line, # for comments)")
 	pushCmd.Flags().StringVar(&pushCompression, "compression", "zstd", "Compression type: zstd, xz, gzip, none")
-	pushCmd.Flags().StringVar(&pushCacheURL, "cache-url", "https://cache.nixos.org", "Upstream binary cache URL (empty to skip reference checking)")
+	pushCmd.Flags().StringVar(&pushCacheURL, "upstream-cache", "https://cache.nixos.org", "Upstream binary cache URL (empty to skip reference checking)")
 	pushCmd.Flags().IntVar(&pushWorkers, "workers", 50, "Number of concurrent workers")
 	pushCmd.Flags().BoolVar(&pushPrepareRefs, "prepare-refs", true, "Also prepare references that are not on the upstream cache")
 	pushCmd.Flags().StringVar(&pushSigningKey, "signing-key", "", "Path to Nix signing private key file")

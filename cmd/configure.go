@@ -17,7 +17,7 @@ var configureCmd = &cobra.Command{
 	Short: "Interactively configure cache backend and settings",
 	Run: func(cmd *cobra.Command, args []string) {
 		registry, repository := network.GetRegistryAndRepository()
-		ociToken := network.GetToken(registry, repository)
+		ociToken := network.GetToken(registry, repository, "")
 		if ociToken == "" {
 			PrintError("Authentication token missing (oci_token, GITHUB_TOKEN or GH_TOKEN)")
 			os.Exit(1)
@@ -30,7 +30,8 @@ var configureCmd = &cobra.Command{
 		var existingR2PublicURL string
 		var existingR2Endpoint = ""
 
-		tokenMgr := proxy.NewTokenManager(registry, repository, getGithubToken())
+		token := getTokenForRegistry(registry)
+		tokenMgr := proxy.NewTokenManager(registry, repository, token)
 		remoteConf, existingAnnotations, _ := proxy.BootstrapConfigWithAnnotations(context.Background(), nil, registry, repository, tokenMgr)
 		if existingAnnotations != nil {
 			b := existingAnnotations["aeroflare.index-type"]

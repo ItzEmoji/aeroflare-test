@@ -96,25 +96,21 @@ func countSteps(cfg *InitConfig) int {
 // createOCIRepository pushes an initial config manifest, which auto-creates
 // the package on registries like ghcr.io.
 func createOCIRepository(cfg *InitConfig) error {
-	// network.GetToken relies on GITHUB_TOKEN/GH_TOKEN/GITLAB_TOKEN env vars.
-	// We inject the token we just obtained from the wizard.
-	if cfg.GitToken != "" {
-		_ = os.Setenv("GITHUB_TOKEN", cfg.GitToken)
-		_ = os.Setenv("GITLAB_TOKEN", cfg.GitToken)
-		if cfg.GitUsername != "" {
-			_ = os.Setenv("AEROFLARE_GIT_USERNAME", cfg.GitUsername)
-		}
-	}
-
 	if cfg.Registry == "registry.gitlab.com" && cfg.GitProvider == GitGitLab {
 		if err := ensureGitLabProjectExists(cfg.GitToken, cfg.CacheName); err != nil {
 			return fmt.Errorf("ensure GitLab project exists: %w", err)
 		}
 	}
 
-	ociToken := network.GetToken(cfg.Registry, cfg.Repository)
+	var explicitToken string
+	if (cfg.Registry == "ghcr.io" && cfg.GitProvider == GitGitHub) || 
+	   (cfg.Registry == "registry.gitlab.com" && cfg.GitProvider == GitGitLab) {
+		explicitToken = cfg.GitToken
+	}
+
+	ociToken := network.GetToken(cfg.Registry, cfg.Repository, explicitToken)
 	if ociToken == "" {
-		return fmt.Errorf("no OCI authentication token found \u2014 set GITHUB_TOKEN or GH_TOKEN")
+		return fmt.Errorf("no OCI authentication token found \u2014 configure your environment or secrets manager")
 	}
 	cfg.OCIToken = ociToken
 
@@ -294,8 +290,9 @@ jobs:
 	for _, c := range cmds {
 		cmd := exec.Command(c[0], c[1:]...)
 		cmd.Dir = tmpDir
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("git %s failed: %w", c[1], err)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("git %s failed: %w\nOutput: %s", c[1], err, strings.TrimSpace(string(out)))
 		}
 	}
 
