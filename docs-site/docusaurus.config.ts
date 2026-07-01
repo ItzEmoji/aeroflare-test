@@ -11,7 +11,11 @@ const config: Config = {
   organizationName: 'aeroflare',
   projectName: 'aeroflare',
   onBrokenLinks: 'throw',
-  onBrokenMarkdownLinks: 'warn',
+  markdown: {
+    hooks: {
+      onBrokenMarkdownLinks: 'warn',
+    },
+  },
   i18n: {
     defaultLocale: 'en',
     locales: ['en'],
