@@ -5,7 +5,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 const config: Config = {
   title: 'Aeroflare',
   tagline: 'High-performance OCI-backed Nix binary cache proxy',
-  favicon: 'img/favicon.ico',
+  favicon: 'img/favicon.svg',
   url: 'https://aeroflare.dev',
   baseUrl: '/',
   organizationName: 'aeroflare',
