@@ -5,61 +5,47 @@ sidebar_position: 1
 ---
 # Core Commands
 
-This document covers the core commands and global settings for the Aeroflare CLI, focusing on initialization, configuration, and settings management.
+This document covers the internal implementation mechanics of the core commands and global state management for the Aeroflare CLI, implemented across `cmd/root.go`, `cmd/init.go`, `cmd/configure.go`, and `cmd/settings.go`.
 
-## Global Flags
+## Global Flags and Environment State (`cmd/root.go`)
 
-The `aeroflare` root command supports the following global flags that apply to all subcommands:
+The `aeroflare` root command uses Viper to manage global state and flag bindings:
 
-- `-v`, `--verbose`: Enable verbose output. Use `-v` for package logs, and `-vv` for request logs.
-- `--cache-url`: OCI registry URL for the cache.
-- `--github-token`: GitHub API Token.
-- `--gitlab-token`: GitLab API Token.
-- `--cf-token`: Cloudflare API Token.
-- `--cf-user-id`: Cloudflare Account ID.
+- `--verbose` (`-v`, `-vv`): Controls the `network.DebugLogger` boolean. `-vv` triggers request-level logging (`VerboseCount >= 2`).
+- `--cache-url`, `--github-token`, `--gitlab-token`, `--cf-token`, `--cf-user-id`: Core configuration flags.
 
-These flags can also be provided via environment variables with the `AEROFLARE_` prefix (e.g., `AEROFLARE_CACHE_URL`).
+Viper automatically maps all flags to environment variables by applying the `AEROFLARE_` prefix and replacing dashes with underscores (e.g., `--cache-url` maps to `AEROFLARE_CACHE_URL`).
 
-## aeroflare init
+Additionally, `cmd/root.go` binds a specific alias, `AEROFLARE_CACHE`. When this environment variable is used instead of `AEROFLARE_CACHE_URL`, the `GetCacheURL()` function automatically prefixes the provided cache name with `ghcr.io/` (e.g., `AEROFLARE_CACHE=my-org/my-cache` becomes `ghcr.io/my-org/my-cache`).
 
-Initialize Aeroflare infrastructure via an interactive wizard.
+## aeroflare init (`cmd/init.go`)
 
-```bash
-aeroflare init
-```
+The `init` command orchestrates the `setup.RunWizard()` and `setup.RunProvision(cfg)` flow. 
 
-The setup wizard will provision all required infrastructure:
-- OCI repository for storing cache data
-- Cloudflare R2 bucket (if selected)
-- Cloudflare Worker deployment
-- Git repository and CI/CD integration (if selected)
+Crucially, before invoking the provisioner, `init.go` dynamically mutates the process environment by exporting required tokens so that underlying Terraform/Pulumi or SDK calls can authenticate:
+- If the R2 backend is selected, it exports `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+- If GitHub Registry (`ghcr.io`) or GitHub Git Provider is selected, it exports `GITHUB_TOKEN`.
 
-The wizard asks all questions up front and displays a summary before making any changes. No infrastructure is created until you confirm.
+## aeroflare configure (`cmd/configure.go`)
 
-## aeroflare configure
+The `configure` command reads and writes cache backend configuration directly to OCI manifest annotations using `network.PushConfigManifest`.
 
-Interactively configure the cache backend and related settings.
+It manipulates the following specific OCI annotation keys:
+- `aeroflare.index-type`: The storage backend (`r2`, `native`, or `json`).
+- `aeroflare.public-key`: The nix cache public key.
+- `aeroflare.r2.bucket`: The R2 bucket name.
+- `public-r2-url`: The R2 public URL (e.g., `https://pub-xxx.r2.dev`).
+- `aeroflare.r2.endpoint`: The S3 API endpoint for R2.
 
-```bash
-aeroflare configure
-```
+As a cleanup mechanic, if the user migrates away from the `json` backend (e.g., changing to `r2` or `native`), the code actively issues a deletion request for the `cache-index` image tag via `network.DeleteTag()` to prevent stale JSON indexes from lingering in the registry.
 
-This command allows you to change the underlying storage mechanism and its settings, saving the configuration to OCI manifest annotations.
-Supported backends include:
-- Cloudflare R2 (Recommended)
-- Native OCI Tags (Experimental)
-- `cache-index.json` (Not Recommended)
+## aeroflare settings (`cmd/settings.go`)
 
-## aeroflare settings
+The `settings` command provides an interactive UI, but under the hood, it directly manipulates the Viper configuration store and flushes the changes to disk (`viper.WriteConfig()`).
 
-Configure Aeroflare interactively through a user-friendly terminal UI.
-
-```bash
-aeroflare settings
-```
-
-This command opens an interactive menu to adjust:
-- **Appearance Theme:** Choose between Catppuccin, Gruvbox Dark, Gruvbox Light, or the Default Terminal theme.
-- **Registry Login & Setup:** Configure authentication for GitHub Packages (ghcr.io), GitLab Registry, Cloudflare R2, or a custom OCI registry.
-
-Settings are saved locally to your `aeroflare.yaml` configuration file, typically located at `~/.config/aeroflare/aeroflare.yaml` or `$XDG_CONFIG_HOME/aeroflare/aeroflare.yaml`.
+Depending on the user's choices in the `huh` forms, it mutates the following internal Viper configuration keys:
+- `theme`: UI color scheme (e.g., `catppuccin`, `gruvbox-dark`).
+- `git-provider`: Set to `github`, `gitlab`, or `none`.
+- `git-token`: Stores the corresponding GitHub or GitLab token.
+- `cloudflare-api-token`: Stores the Cloudflare token if the R2 registry is selected.
+- `cache-url`: Stores the custom OCI registry URL.
