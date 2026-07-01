@@ -160,7 +160,7 @@ func getGithubUser(token string) (string, []string) {
 	if err != nil || resp.StatusCode != 200 {
 		return "", nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	scopesStr := resp.Header.Get("X-OAuth-Scopes")
 	var scopes []string
@@ -191,7 +191,7 @@ func getGitlabUser(token string) string {
 	if err != nil || resp.StatusCode != 200 {
 		return ""
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var data struct {
 		Username string `json:"username"`

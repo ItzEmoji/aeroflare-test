@@ -11,7 +11,7 @@ func TestGetCacheURL(t *testing.T) {
 	viper.SetEnvPrefix("AEROFLARE")
 	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	viper.AutomaticEnv()
-	viper.BindEnv("cache", "AEROFLARE_CACHE")
+	_ = viper.BindEnv("cache", "AEROFLARE_CACHE")
 
 	tests := []struct {
 		name     string

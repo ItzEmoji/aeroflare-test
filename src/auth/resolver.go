@@ -81,9 +81,10 @@ func ResolveGitlabToken(mgrs ...secrets.Manager) (string, error) {
 }
 
 func ResolveRegistryToken(registry string, mgrs ...secrets.Manager) (string, error) {
-	if registry == "ghcr.io" {
+	switch registry {
+	case "ghcr.io":
 		return ResolveGithubToken(mgrs...)
-	} else if registry == "registry.gitlab.com" {
+	case "registry.gitlab.com":
 		return ResolveGitlabToken(mgrs...)
 	}
 	// Note: We use WithEnv here in case an explicit oci_token is provided for generic registries

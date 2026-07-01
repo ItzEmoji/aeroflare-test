@@ -94,7 +94,7 @@ func (m *defaultManager) Set(key, value string) error {
 
 	// Fallback
 	dir := getConfigDir()
-	os.MkdirAll(dir, 0755)
+	_ = os.MkdirAll(dir, 0755)
 	
 	file := getFallbackFile()
 	secrets := make(map[string]string)
@@ -185,11 +185,9 @@ func (m *defaultManager) List() ([]string, error) {
 }
 
 func (m *defaultManager) Delete(key string) error {
-	err := keyring.Delete(m.serviceName, key)
-	if err != nil && err != keyring.ErrNotFound {
-		// If keyring fails for another reason, we might still want to try fallback.
-		// But usually it's fine.
-	}
+	_ = keyring.Delete(m.serviceName, key)
+	// If keyring fails for another reason, we might still want to try fallback.
+	// But usually it's fine.
 
 	// Also try removing from fallback
 	file := getFallbackFile()

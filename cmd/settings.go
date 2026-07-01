@@ -96,28 +96,29 @@ var settingsCmd = &cobra.Command{
 		// Based on the user's choice in the primary form, we dynamically construct
 		// and present a secondary form to collect the necessary authentication credentials.
 		var authGroups []*huh.Group
-		if registryAction == "github" {
+		switch registryAction {
+		case "github":
 			authGroups = append(authGroups, huh.NewGroup(
 				huh.NewInput().
 					Title("GitHub Personal Access Token").
 					EchoMode(huh.EchoModePassword).
 					Value(&githubToken),
 			))
-		} else if registryAction == "gitlab" {
+		case "gitlab":
 			authGroups = append(authGroups, huh.NewGroup(
 				huh.NewInput().
 					Title("GitLab Personal Access Token").
 					EchoMode(huh.EchoModePassword).
 					Value(&gitlabToken),
 			))
-		} else if registryAction == "cloudflare" {
+		case "cloudflare":
 			authGroups = append(authGroups, huh.NewGroup(
 				huh.NewInput().
 					Title("Cloudflare API Token").
 					EchoMode(huh.EchoModePassword).
 					Value(&cloudflareToken),
 			))
-		} else if registryAction == "custom" {
+		case "custom":
 			authGroups = append(authGroups, huh.NewGroup(
 				huh.NewInput().
 					Title("Registry URL (e.g., https://registry.example.com)").
@@ -137,21 +138,22 @@ var settingsCmd = &cobra.Command{
 		// Apply the captured settings back into the Viper configuration instance.
 		viper.Set("theme", theme)
 
-		if registryAction == "github" {
+		switch registryAction {
+		case "github":
 			viper.Set("git-provider", "github")
 			if githubToken != "" {
 				viper.Set("git-token", githubToken)
 			}
-		} else if registryAction == "gitlab" {
+		case "gitlab":
 			viper.Set("git-provider", "gitlab")
 			if gitlabToken != "" {
 				viper.Set("git-token", gitlabToken)
 			}
-		} else if registryAction == "cloudflare" {
+		case "cloudflare":
 			if cloudflareToken != "" {
 				viper.Set("cloudflare-api-token", cloudflareToken)
 			}
-		} else if registryAction == "custom" {
+		case "custom":
 			if customRegistryURL != "" {
 				viper.Set("cache-url", customRegistryURL)
 			}

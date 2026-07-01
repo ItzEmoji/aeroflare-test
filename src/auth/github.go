@@ -51,7 +51,7 @@ func requestDeviceCode(clientID, baseURL string) (*DeviceCodeResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -123,13 +123,13 @@ func pollAccessToken(clientID string, deviceCode string, interval int, baseURL s
 			}
 
 			if resp.StatusCode >= 500 {
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				reqCancel()
 				continue // transient error, retry
 			}
 
 			body, err := io.ReadAll(resp.Body)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if err != nil {
 				reqCancel()
 				continue

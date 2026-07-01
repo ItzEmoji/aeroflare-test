@@ -136,12 +136,12 @@ func RequireOCIToken(registry string) (string, string) {
 func getTokenForRegistry(registry string) string {
 	if registry == "ghcr.io" {
 		token := RequireGithubToken()
-		os.Setenv("oci_token", token)
-		os.Setenv("GITHUB_TOKEN", token)
+		_ = os.Setenv("oci_token", token)
+		_ = os.Setenv("GITHUB_TOKEN", token)
 		return token
 	} else if registry != "" {
 		_, token := RequireOCIToken(registry)
-		os.Setenv("oci_token", token)
+		_ = os.Setenv("oci_token", token)
 		return token
 	}
 	return ""
@@ -153,9 +153,9 @@ func getOptionalTokenForRegistry(registry string) string {
 	}
 	token, _ := auth.ResolveRegistryToken(registry, getSecretsManager())
 	if token != "" {
-		os.Setenv("oci_token", token)
+		_ = os.Setenv("oci_token", token)
 		if registry == "ghcr.io" {
-			os.Setenv("GITHUB_TOKEN", token)
+			_ = os.Setenv("GITHUB_TOKEN", token)
 		}
 	}
 	return token

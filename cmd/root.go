@@ -68,7 +68,7 @@ func initConfig() {
 	viper.SetEnvPrefix("AEROFLARE")
 	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	viper.AutomaticEnv()
-	viper.BindEnv("cache", "AEROFLARE_CACHE")
+	_ = viper.BindEnv("cache", "AEROFLARE_CACHE")
 
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
@@ -105,5 +105,5 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&globalCfToken, "cf-token", "", "Cloudflare API Token")
 	rootCmd.PersistentFlags().StringVar(&globalCfUserID, "cf-user-id", "", "Cloudflare Account ID")
 	
-	viper.BindPFlag("cache-url", rootCmd.PersistentFlags().Lookup("cache-url"))
+	_ = viper.BindPFlag("cache-url", rootCmd.PersistentFlags().Lookup("cache-url"))
 }

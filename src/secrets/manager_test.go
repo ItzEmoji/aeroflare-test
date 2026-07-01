@@ -15,8 +15,8 @@ func TestFallbackManager(t *testing.T) {
 
 	// Use a dummy config dir for tests to avoid touching real keychains or config files
 	tmpDir := t.TempDir()
-	os.Setenv("XDG_CONFIG_HOME", tmpDir)
-	defer os.Unsetenv("XDG_CONFIG_HOME")
+	_ = os.Setenv("XDG_CONFIG_HOME", tmpDir)
+	defer func() { _ = os.Unsetenv("XDG_CONFIG_HOME") }()
 
 	manager := secrets.NewManager()
 	

@@ -12,7 +12,7 @@ func TestRequestDeviceCode(t *testing.T) {
 	t.Parallel()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"device_code": "dc123", "user_code": "123-456", "verification_uri": "https://github.com/login/device", "interval": 5}`))
+		_, _ = w.Write([]byte(`{"device_code": "dc123", "user_code": "123-456", "verification_uri": "https://github.com/login/device", "interval": 5}`))
 	}))
 	defer ts.Close()
 
@@ -32,14 +32,14 @@ func TestPollAccessTokenSuccess(t *testing.T) {
 		reqNum := atomic.AddInt32(&requests, 1)
 		w.Header().Set("Content-Type", "application/json")
 		if reqNum == 1 {
-			w.Write([]byte(`{"error": "authorization_pending"}`))
+			_, _ = w.Write([]byte(`{"error": "authorization_pending"}`))
 			return
 		}
 		if reqNum == 2 {
-			w.Write([]byte(`{"error": "slow_down"}`))
+			_, _ = w.Write([]byte(`{"error": "slow_down"}`))
 			return
 		}
-		w.Write([]byte(`{"access_token": "gho_12345"}`))
+		_, _ = w.Write([]byte(`{"access_token": "gho_12345"}`))
 	}))
 	defer ts.Close()
 
@@ -60,11 +60,11 @@ func TestPollAccessTokenTransientError(t *testing.T) {
 		if reqNum == 1 {
 			w.Header().Set("Content-Type", "text/html")
 			w.WriteHeader(http.StatusBadGateway)
-			w.Write([]byte(`<html>502 Bad Gateway</html>`))
+			_, _ = w.Write([]byte(`<html>502 Bad Gateway</html>`))
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"access_token": "gho_12345"}`))
+		_, _ = w.Write([]byte(`{"access_token": "gho_12345"}`))
 	}))
 	defer ts.Close()
 
@@ -81,7 +81,7 @@ func TestPollAccessTokenError(t *testing.T) {
 	t.Parallel()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"error": "expired_token"}`))
+		_, _ = w.Write([]byte(`{"error": "expired_token"}`))
 	}))
 	defer ts.Close()
 
@@ -96,7 +96,7 @@ func TestPollAccessTokenClientError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"error": "access_denied"}`))
+		_, _ = w.Write([]byte(`{"error": "access_denied"}`))
 	}))
 	defer ts.Close()
 

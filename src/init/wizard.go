@@ -179,11 +179,8 @@ func promptCredentials(cfg *InitConfig) error {
 	}
 
 	// OCI token detection.
-	needsOCIToken := true
-	if (cfg.Registry == "ghcr.io" && cfg.GitProvider == GitGitHub) ||
-	   (cfg.Registry == "registry.gitlab.com" && cfg.GitProvider == GitGitLab) {
-		needsOCIToken = false
-	}
+	needsOCIToken := (cfg.Registry != "ghcr.io" || cfg.GitProvider != GitGitHub) &&
+		(cfg.Registry != "registry.gitlab.com" || cfg.GitProvider != GitGitLab)
 	
 	var ociUsername string
 	var ociToken string
