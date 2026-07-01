@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/go-containerregistry/pkg/name"
 )
 
 // TokenManager handles retrieving and caching the OCI Bearer token.
@@ -27,6 +29,10 @@ type TokenManager struct {
 
 // NewTokenManager creates a new OCI token manager.
 func NewTokenManager(registry, repository, githubToken string) *TokenManager {
+	if reg, err := name.NewRegistry(registry); err == nil {
+		registry = reg.RegistryStr()
+	}
+
 	// Check for static token overrides once during initialization
 	var override string
 	if t := os.Getenv("oci_token"); t != "" && !strings.HasPrefix(t, "ghp_") && !strings.HasPrefix(t, "github_pat_") && !strings.HasPrefix(t, "glpat-") && !strings.HasPrefix(t, "gho_") && !strings.HasPrefix(t, "ghu_") && !strings.HasPrefix(t, "ghs_") {

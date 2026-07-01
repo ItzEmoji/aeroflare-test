@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"aeroflare/src/auth"
+	"aeroflare/src/secrets"
 	"aeroflare/src/ui"
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/viper"
@@ -177,6 +178,20 @@ func promptCredentials(cfg *InitConfig) error {
 		}
 	}
 
+	// OCI token detection.
+	needsOCIToken := true
+	if (cfg.Registry == "ghcr.io" && cfg.GitProvider == GitGitHub) ||
+	   (cfg.Registry == "registry.gitlab.com" && cfg.GitProvider == GitGitLab) {
+		needsOCIToken = false
+	}
+	
+	var ociUsername string
+	var ociToken string
+	
+	if needsOCIToken {
+		cfg.OCIToken, _ = auth.ResolveRegistryToken(cfg.Registry)
+	}
+
 	// Build the credentials form with only the fields that are missing.
 	var fields []huh.Field
 
@@ -237,11 +252,32 @@ func promptCredentials(cfg *InitConfig) error {
 			}))
 	}
 
+	if needsOCIToken && cfg.OCIToken == "" {
+		fields = append(fields, huh.NewInput().
+			Title(fmt.Sprintf("OCI Username for %s", cfg.Registry)).
+			Value(&ociUsername).
+			Validate(notEmpty("OCI Username")))
+
+		fields = append(fields, huh.NewInput().
+			Title(fmt.Sprintf("OCI Token / Password for %s", cfg.Registry)).
+			EchoMode(huh.EchoModePassword).
+			Value(&ociToken).
+			Validate(notEmpty("OCI Token")))
+	}
+
 	// Show the credentials form only if there are missing values.
 	if len(fields) > 0 {
 		if err := huh.NewForm(huh.NewGroup(fields...)).WithTheme(AeroflareTheme()).Run(); err != nil {
 			return fmt.Errorf("wizard cancelled")
 		}
+	}
+
+	// Save OCI credentials if provided
+	if ociToken != "" && ociUsername != "" {
+		cfg.OCIToken = ociToken
+		sm := secrets.NewManager()
+		_ = sm.Set(fmt.Sprintf("oci-%s-username", cfg.Registry), ociUsername)
+		_ = sm.Set(fmt.Sprintf("oci-%s-token", cfg.Registry), ociToken)
 	}
 
 	// Resolve Git username from token.

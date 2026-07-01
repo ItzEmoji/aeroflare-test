@@ -14,12 +14,17 @@ import (
 	"github.com/spf13/viper"
 	"aeroflare/src/proxy"
 	"aeroflare/src/auth"
+	"github.com/google/go-containerregistry/pkg/name"
 )
 
 // ExchangeToken performs a token exchange for a given OCI registry.
 // Some registries (like ghcr.io) require Basic auth token exchange to get a Bearer token.
 // repository should be the full repository path (e.g. "itzemoji/nix-cache-test/nix-cache")
 func ExchangeToken(registry, repository, username, basicAuthToken string) (string, error) {
+	if reg, err := name.NewRegistry(registry); err == nil {
+		registry = reg.RegistryStr()
+	}
+
 	proto := proxy.GetProtocol(registry)
 
 	// Discover realm and service via /v2/ endpoint
@@ -102,11 +107,22 @@ func GetToken(registry, repository, explicitToken string) string {
 		return ""
 	}
 
-	if !strings.HasPrefix(token, "ghp_") && !strings.HasPrefix(token, "github_pat_") && !strings.HasPrefix(token, "glpat-") && !strings.HasPrefix(token, "gho_") && !strings.HasPrefix(token, "ghu_") && !strings.HasPrefix(token, "ghs_") {
-		return token // Token seems to be a valid Bearer token already
+	username, _ := auth.NewResolver(fmt.Sprintf("oci-%s-username", registry)).Resolve()
+	if username == "" {
+		username = os.Getenv("AEROFLARE_GIT_USERNAME")
 	}
 
-	username := os.Getenv("AEROFLARE_GIT_USERNAME")
+	isGitToken := strings.HasPrefix(token, "ghp_") || strings.HasPrefix(token, "github_pat_") || strings.HasPrefix(token, "glpat-") || strings.HasPrefix(token, "gho_") || strings.HasPrefix(token, "ghu_") || strings.HasPrefix(token, "ghs_")
+	isDockerToken := strings.HasPrefix(token, "dckr_pat_")
+	
+	// If it's a JWT, or we have no username and it doesn't look like a known PAT, assume it's already a Bearer token.
+	if strings.HasPrefix(token, "eyJ") || (!isGitToken && !isDockerToken && username == "") {
+		return token 
+	}
+
+	if username == "" {
+		username = "token"
+	}
 
 	// Try to exchange it
 	exchanged, err := ExchangeToken(registry, repository, username, token)
@@ -152,7 +168,11 @@ func GetRegistryAndRepository() (string, string) {
 			os.Exit(1)
 		}
 		cacheName = strings.ToLower(cacheName)
-		repository = fmt.Sprintf("%s/nix-cache", cacheName)
+		if (registry == "docker.io" || registry == "index.docker.io" || registry == "registry-1.docker.io") && strings.Contains(cacheName, "/") {
+			repository = cacheName
+		} else {
+			repository = fmt.Sprintf("%s/nix-cache", cacheName)
+		}
 	}
 
 	return registry, repository

@@ -80,7 +80,12 @@ type InitConfig struct {
 // DeriveDefaults populates computed fields from user-supplied values.
 func (c *InitConfig) DeriveDefaults() {
 	c.CacheName = strings.ToLower(c.CacheName)
-	c.Repository = fmt.Sprintf("%s/nix-cache", c.CacheName)
+	
+	if (c.Registry == "docker.io" || c.Registry == "index.docker.io" || c.Registry == "registry-1.docker.io") && strings.Contains(c.CacheName, "/") {
+		c.Repository = c.CacheName
+	} else {
+		c.Repository = fmt.Sprintf("%s/nix-cache", c.CacheName)
+	}
 
 	sanitized := strings.ReplaceAll(c.CacheName, "/", "-")
 	c.WorkerName = fmt.Sprintf("aeroflare-%s", sanitized)

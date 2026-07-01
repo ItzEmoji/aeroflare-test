@@ -102,7 +102,13 @@ func createOCIRepository(cfg *InitConfig) error {
 		}
 	}
 
-	ociToken := network.GetToken(cfg.Registry, cfg.Repository, cfg.GitToken)
+	var explicitToken string
+	if (cfg.Registry == "ghcr.io" && cfg.GitProvider == GitGitHub) || 
+	   (cfg.Registry == "registry.gitlab.com" && cfg.GitProvider == GitGitLab) {
+		explicitToken = cfg.GitToken
+	}
+
+	ociToken := network.GetToken(cfg.Registry, cfg.Repository, explicitToken)
 	if ociToken == "" {
 		return fmt.Errorf("no OCI authentication token found \u2014 configure your environment or secrets manager")
 	}
