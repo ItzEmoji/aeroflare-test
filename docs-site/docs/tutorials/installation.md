@@ -12,13 +12,13 @@ Aeroflare distributes binaries via Nix flakes, standard Go toolchains, and pre-c
 If you have a modern Nix installation with flakes enabled, you can run Aeroflare directly without installing it globally.
 
 ```bash
-nix run github:aeroflare/aeroflare -- --help
+nix run github:ItzEmoji/aeroflare -- --help
 ```
 
 To install it into your user profile permanently:
 
 ```bash
-nix profile install github:aeroflare/aeroflare
+nix profile install github:ItzEmoji/aeroflare
 ```
 
 ## Option 2: Building from Source (Go)
@@ -27,7 +27,7 @@ Aeroflare requires Go 1.21 or later.
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/aeroflare/aeroflare.git
+   git clone https://github.com/ItzEmoji/aeroflare.git
    cd aeroflare
    ```
 
@@ -45,7 +45,7 @@ Aeroflare requires Go 1.21 or later.
 
 Statically linked binaries for Linux and macOS are attached to every GitHub Release.
 
-1. Navigate to the [Releases page](https://github.com/aeroflare/aeroflare/releases).
+1. Navigate to the [Releases page](https://github.com/ItzEmoji/aeroflare/releases).
 2. Download the archive corresponding to your OS and architecture.
 3. Extract and place the binary in your `PATH`.
 
