@@ -54,37 +54,7 @@ This command configures your Nix daemon to use the proxy as an official substitu
 nix run github:ItzEmoji/aeroflare -- run -- nix build .#default --print-out-paths
 ```
 
-## CI/CD Integration (GitHub Actions)
 
-Aeroflare is highly suited for CI/CD environments where builds occur repeatedly. Since it is stateless, it doesn't require a state database.
-
-Here is a complete workflow example for GitHub Actions:
-
-```yaml
-name: Build & Cache
-on: [push]
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Install Nix
-      uses: cachix/install-nix-action@v25
-      with:
-        extra_nix_config: |
-          accept-flake-config = true
-
-    - name: Build with Aeroflare Caching
-      run: |
-        nix run github:ItzEmoji/aeroflare -- run -- \
-          nix build .#default --print-out-paths
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        AEROFLARE_CACHE_URL: ghcr.io/${{ github.repository }}
-```
 
 ### The Cache Lifecycle:
 1. **Pulling**: If the required build outputs already exist in your remote cache, they are pulled immediately, bypassing the local compilation process entirely.
