@@ -4,8 +4,6 @@ title: Proxy Modes
 sidebar_position: 2
 ---
 
-# Proxy Modes
-
 Aeroflare's proxy supports three different operational modes for storing and serving Nix cache data (narinfos). Understanding these modes will help you choose the best configuration for your performance, storage, and compatibility needs.
 
 ## `native-OCI-Tags`
