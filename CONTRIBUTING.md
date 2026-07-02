@@ -8,7 +8,6 @@ This project uses Nix flakes for its build and development environment.
 1. **Enter the Development Environment**:
    ```bash
    nix develop
-   # or nix-shell
    ```
    This automatically installs the compatible Go compiler, linter (`golangci-lint`), and vendor tools.
 
@@ -29,6 +28,11 @@ This project uses Nix flakes for its build and development environment.
    ```bash
    go test ./... -v
    ```
+
+## Dependency Management
+The project uses `govendor` to manage Nix dependency locks in `govendor.toml`.
+- After modifying `go.mod`, run `govendor` in the root of the project to update `govendor.toml`.
+- Run `govendor --check` to check if manifests have drifted and need updating.
 
 ## Pull Request Guidelines
 - Follow Conventional Commits format (e.g., `feat: ...`, `fix: ...`, `docs: ...`).

@@ -9,4 +9,4 @@ We prefer vulnerabilities to be reported privately:
 2. Click on "Vulnerability disclosure" -> "Report a vulnerability".
 3. Provide a detailed description, reproduction steps, and potential impact.
 
-If private reporting is not configured or available, please open a regular issue with a notice, or use GitHub discussions.
+If private reporting is not configured or available, please contact the maintainers privately.
