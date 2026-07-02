@@ -28,6 +28,8 @@ Execute a build and automatically push the outputs:
 ```bash
 nix run github:ItzEmoji/aeroflare -- run -- nix build .#default --print-out-paths
 ```
+*Note: The `--print-out-paths` flag is necessary for the `run` command to know which store paths were built and need to be cached.*
+
 
 ---
 
@@ -49,11 +51,12 @@ nix run github:ItzEmoji/aeroflare -- run -- nix build .#default --print-out-path
 │   ├── index.go        # JSON cache-index schema and update logic
 │   ├── r2.go           # Cloudflare R2 / S3 client integration
 │   └── gc.go           # BFS-based garbage collection algorithm
-└── docs-site/          # Docusaurus documentation website
+└── docs/               # Docusaurus documentation website
 ```
 
 ---
 
 ## Documentation
 
-For full guides, reference manuals, and architecture explanations, check out the [documentation site](https://aeroflare.pages.dev) or browse [docs-site/docs/](docs-site/docs/).
+For full guides, reference manuals, and architecture explanations, check out the [documentation site](https://aeroflare.pages.dev) or browse [docs/docs/](docs/docs/).
+
