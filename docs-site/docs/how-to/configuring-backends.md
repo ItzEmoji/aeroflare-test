@@ -21,11 +21,16 @@ During the setup, select **Cloudflare R2**. The wizard will prompt you for your 
 
 ### Manual Settings
 
-If you prefer to configure this manually without provisioning, use the interactive settings UI:
+If you prefer to configure your credentials manually without provisioning, use the interactive client settings UI:
 ```bash
 nix run github:ItzEmoji/aeroflare -- settings
 ```
-Under **Registry Login & Setup**, select **Cloudflare R2** and provide your credentials.
+Under **Registry Login & Setup**, select **Cloudflare R2** and provide your API tokens.
+
+To configure the cache backend storage settings (e.g., bucket name, S3 API endpoint, index type, and Nix signing key), run:
+```bash
+nix run github:ItzEmoji/aeroflare -- configure
+```
 
 ## Option 2: GitHub Container Registry (GHCR)
 
@@ -41,8 +46,13 @@ Select **GitHub Packages (ghcr.io)**. You will need a GitHub Personal Access Tok
 
 ### Custom OCI Registries
 
-For any other OCI registry, you can define a custom cache URL:
+For any other OCI registry, you can define your credentials and target URL locally using:
 ```bash
 nix run github:ItzEmoji/aeroflare -- settings
 ```
 Select **Custom OCI Registry** and provide the full base URL (e.g., `registry.example.com/my-org/my-nix-cache`).
+
+To configure the cache backend settings (such as index type or public signing keys) on the registry itself, run:
+```bash
+nix run github:ItzEmoji/aeroflare -- configure
+```
