@@ -30,14 +30,19 @@ This updates the cache metadata (OCI manifest annotations) directly in the regis
 
 ## Client Settings and Credentials
 
-To configure registry logins and R2 tokens on your local machine, you can use the interactive settings UI or environment variables.
+To configure registry logins and R2 tokens on your local machine, you can use the interactive authentication commands or environment variables.
 
-### Interactive CLI Settings
-Run:
+### Interactive CLI Authentication
+Run the login command to configure credentials interactively:
 ```bash
-nix run github:ItzEmoji/aeroflare -- settings
+nix run github:ItzEmoji/aeroflare -- auth login
 ```
-Under **Registry Login & Setup**, select your provider (e.g., Cloudflare R2, GitHub Packages, or Custom OCI Registry) and input your credentials.
+This wizard securely stores tokens (GitHub, GitLab, or Cloudflare API tokens) in your local credential store.
+
+You can also manage credentials manually:
+- **Set a token**: `nix run github:ItzEmoji/aeroflare -- auth set [key] [value]` (e.g. `cf-token`, `github-token`, `gitlab-token`, `cf-user-id`)
+- **List stored keys**: `nix run github:ItzEmoji/aeroflare -- auth list`
+- **Remove a credential**: `nix run github:ItzEmoji/aeroflare -- auth remove [key]`
 
 ### Environment Variables
 Alternatively, you can configure credentials directly via environment variables:
