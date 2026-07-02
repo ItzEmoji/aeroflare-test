@@ -43,9 +43,12 @@ extra-substituters = http://127.0.0.1:8080
 
 Managing the proxy daemon manually can be tedious. The recommended approach for local development is to use the `aeroflare run` wrapper.
 
+> **Important:** Currently, if you want Aeroflare to successfully push the resulting artifacts, you must pass the `--print-out-paths` flag to your Nix build command so Aeroflare knows what to upload.
+
 ```bash
-nix run github:ItzEmoji/aeroflare -- run -- nix build .#default
+nix run github:ItzEmoji/aeroflare -- run -- nix build .#default --print-out-paths
 ```
+
 
 This command automatically:
 1. Spawns an ephemeral proxy server on a random open port.

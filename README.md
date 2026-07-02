@@ -23,13 +23,6 @@ Run the interactive onboarding wizard to configure credentials and provision res
 ```bash
 nix run github:ItzEmoji/aeroflare -- init
 ```
-
-### 2. Run the Proxy Daemon
-Start the HTTP substituter proxy:
-```bash
-nix run github:ItzEmoji/aeroflare -- proxy
-```
-
 ### 3. Build & Cache
 Execute a build and automatically push the outputs:
 ```bash
@@ -63,4 +56,4 @@ nix run github:ItzEmoji/aeroflare -- run -- nix build .#default --print-out-path
 
 ## Documentation
 
-For full guides, reference manuals, and architecture explanations, check out the [documentation site](https://aeroflare.dev) or browse [docs-site/docs/](docs-site/docs/).
+For full guides, reference manuals, and architecture explanations, check out the [documentation site](https://aeroflare.pages.dev) or browse [docs-site/docs/](docs-site/docs/).
