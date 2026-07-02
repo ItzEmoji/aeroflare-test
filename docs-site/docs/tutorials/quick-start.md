@@ -3,9 +3,6 @@ id: quick-start
 title: Quick Start
 sidebar_position: 1
 ---
-
-# Quick Start Guide
-
 Welcome to Aeroflare! This guide will get you up and running with your own lightning-fast Nix cache infrastructure in just a few minutes. 
 
 We'll cover how to initialize your configuration, authenticate with your cache provider, run the proxy, and push your first cached build.
@@ -20,7 +17,7 @@ nix run github:ItzEmoji/aeroflare -- init
 
 The `init` command guides you through backend selection and automatically provisions the required buckets or namespaces.
 
-## 2. Configure Authentication
+:::info Authentication
 
 During initialization, the wizard will prompt you for the necessary credentials. If you don't have them defined in your local OS keychain or secrets manager, you'll be asked to provide:
 
@@ -28,8 +25,9 @@ During initialization, the wizard will prompt you for the necessary credentials.
 - Or a **Cloudflare API Token** (if using Cloudflare R2)
 
 Aeroflare securely saves these tokens for future use.
+:::
 
-## 3. Run the Proxy
+## 2. Run the Proxy
 
 Aeroflare operates as a local proxy that intercepts Nix daemon requests. To spin up the proxy server, use:
 
@@ -37,9 +35,11 @@ Aeroflare operates as a local proxy that intercepts Nix daemon requests. To spin
 nix run github:ItzEmoji/aeroflare -- proxy start
 ```
 
+> **Note:** This command runs in the foreground and will block your terminal. Please run it in the background or open a new terminal window to proceed with the next steps.
+
 This starts the local proxy server, ready to route requests and handle caching.
 
-## 4. Push to the Cache
+## 3. Push to the Cache
 
 With your infrastructure initialized and proxy running, you can execute a cached build. The most efficient way is to use the `run` execution wrapper.
 
