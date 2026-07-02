@@ -95,6 +95,11 @@ func Execute() {
 	}
 }
 
+func GetRootCmd() *cobra.Command {
+	return rootCmd
+}
+
+
 func init() {
 	cobra.OnInitialize(initConfig)
 	rootCmd.PersistentFlags().CountVarP(&VerboseCount, "verbose", "v", "Enable verbose output (-v for packages, -vv for requests)")

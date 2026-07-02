@@ -1,0 +1,8 @@
+{
+  "label": "How-To Guides",
+  "position": 2,
+  "link": {
+    "type": "generated-index",
+    "description": "Task-oriented guides for achieving specific goals."
+  }
+}

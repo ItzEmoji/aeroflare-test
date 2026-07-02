@@ -1,0 +1,146 @@
+/* Import a premium font */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&display=swap');
+
+:root {
+  --ifm-font-family-base: 'Inter', system-ui, -apple-system, sans-serif;
+  --ifm-heading-font-family: 'Outfit', 'Inter', system-ui, sans-serif;
+  
+  --ifm-color-primary: #006680;
+  --ifm-color-primary-dark: #005064;
+  --ifm-color-primary-darker: #004557;
+  --ifm-color-primary-darkest: #002e3b;
+  --ifm-color-primary-light: #007c9c;
+  --ifm-color-primary-lighter: #0087a9;
+  --ifm-color-primary-lightest: #33beff;
+
+  --ifm-background-color: #F4F9FC;
+  --ifm-background-surface-color: #EDF3F7;
+  --ifm-color-content: #191C1E;
+  
+  --md-sys-color-outline: #C0CAD1;
+  --md-sys-color-outline-variant: #DDE4E8;
+  --md-sys-color-surface-container: #EDF3F7;
+  --md-sys-color-on-primary: #FFFFFF;
+  --md-sys-color-shadow-opacity: rgba(0, 0, 0, 0.04);
+  --md-sys-color-hover-overlay: rgba(0, 102, 128, 0.05);
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #00D2FF;
+  --ifm-color-primary-dark: #00BCE6;
+  --ifm-color-primary-darker: #00B2D9;
+  --ifm-color-primary-darkest: #0092B3;
+  --ifm-color-primary-light: #33DBFF;
+  --ifm-color-primary-lighter: #4CDFFF;
+  --ifm-color-primary-lightest: #99EEFF;
+  
+  --ifm-background-color: #0E141A;
+  --ifm-background-surface-color: #161F26;
+  --ifm-color-content: #E2E2E5;
+  
+  --md-sys-color-outline: #444D56;
+  --md-sys-color-outline-variant: #384049;
+  --md-sys-color-surface-container: #1C242C;
+  --md-sys-color-on-primary: #003544;
+  --md-sys-color-shadow-opacity: rgba(0, 0, 0, 0.3);
+  --md-sys-color-hover-overlay: rgba(0, 210, 255, 0.05);
+}
+
+/* Hero section centering & padding */
+.hero-centered {
+  padding: 6rem 1.5rem;
+  background: radial-gradient(circle at 50% 0%, rgba(0, 210, 255, 0.08) 0%, rgba(0,0,0,0) 60%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+/* Material You elevated/outlined button */
+.md3-btn-primary {
+  background: var(--ifm-color-primary);
+  color: var(--md-sys-color-on-primary) !important;
+  font-weight: 500;
+  border-radius: 100px;
+  padding: 12px 28px;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  border: none;
+  cursor: pointer;
+  display: inline-block;
+  font-size: 1rem;
+}
+
+.md3-btn-primary:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+  text-decoration: none;
+}
+
+.md3-btn-secondary {
+  background: transparent;
+  color: var(--ifm-color-primary) !important;
+  font-weight: 500;
+  border-radius: 100px;
+  padding: 12px 28px;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  border: 1px solid var(--md-sys-color-outline);
+  cursor: pointer;
+  display: inline-block;
+  font-size: 1rem;
+}
+
+.md3-btn-secondary:hover {
+  background: var(--md-sys-color-hover-overlay);
+  text-decoration: none;
+}
+
+/* Material Outlined Card */
+.md3-card-outlined {
+  background: var(--ifm-background-color);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 24px;
+  padding: 2rem;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.md3-card-outlined:hover {
+  background: linear-gradient(0deg, var(--md-sys-color-hover-overlay), var(--md-sys-color-hover-overlay)), var(--ifm-background-color);
+  box-shadow: 0 4px 12px var(--md-sys-color-shadow-opacity);
+}
+
+[data-theme='dark'] .md3-card-outlined {
+  background: var(--ifm-background-surface-color);
+}
+
+[data-theme='dark'] .md3-card-outlined:hover {
+  background: linear-gradient(0deg, var(--md-sys-color-hover-overlay), var(--md-sys-color-hover-overlay)), var(--ifm-background-surface-color);
+}
+
+/* Material Terminal Block */
+.md3-terminal {
+  background: #0A0F14;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 16px;
+  padding: 20px;
+  font-family: var(--ifm-font-family-monospace);
+  color: #E2E2E5;
+  text-align: left;
+  font-size: 0.95rem;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.terminal-prompt {
+  user-select: none;
+  -webkit-user-select: none;
+}
