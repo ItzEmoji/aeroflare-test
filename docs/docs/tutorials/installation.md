@@ -5,7 +5,7 @@ title: Installation
 
 # Installation
 
-Aeroflare distributes binaries via Nix flakes, standard Go toolchains, and pre-compiled GitHub releases. 
+Aeroflare distributes binaries via Nix flakes and standard Go toolchains. 
 
 ## Option 1: Nix Flakes (Recommended)
 
@@ -41,13 +41,6 @@ Aeroflare requires Go 1.21 or later.
    sudo mv aeroflare /usr/local/bin/
    ```
 
-## Option 3: Pre-compiled Binaries
-
-Statically linked binaries for Linux and macOS are attached to every GitHub Release.
-
-1. Navigate to the [Releases page](https://github.com/ItzEmoji/aeroflare/releases).
-2. Download the archive corresponding to your OS and architecture.
-3. Extract and place the binary in your `PATH`.
 
 ## Verification
 
