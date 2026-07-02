@@ -43,6 +43,7 @@ You can also manage credentials manually:
 - **Set a token**: `nix run github:ItzEmoji/aeroflare -- auth set [key] [value]` (e.g. `cf-token`, `github-token`, `gitlab-token`, `cf-user-id`)
 - **List stored keys**: `nix run github:ItzEmoji/aeroflare -- auth list`
 - **Remove a credential**: `nix run github:ItzEmoji/aeroflare -- auth remove [key]`
+- **Import credentials from other CLIs**: `nix run github:ItzEmoji/aeroflare -- auth import` (automatically detects and imports active credentials from Docker, the GitHub CLI `gh`, or the GitLab CLI `glab`).
 
 ### Environment Variables
 Alternatively, you can configure credentials directly via environment variables:
@@ -50,6 +51,9 @@ Alternatively, you can configure credentials directly via environment variables:
 | Variable | Description |
 | :--- | :--- |
 | `GITHUB_TOKEN` / `GH_TOKEN` | Authentication token for GitHub Packages (ghcr.io) |
+| `GITLAB_TOKEN` | Authentication token for GitLab Registry |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API token |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare Account ID |
 | `R2_BUCKET` | Cloudflare R2 bucket name |
 | `R2_ENDPOINT` | Cloudflare R2 S3 API Endpoint |
 | `R2_ACCESS_KEY_ID` | Cloudflare R2 Access Key ID |
