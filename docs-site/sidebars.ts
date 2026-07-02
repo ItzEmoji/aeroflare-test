@@ -4,6 +4,14 @@ const sidebars: SidebarsConfig = {
   tutorialSidebar: [
     {
       type: 'category',
+      label: 'Tutorials & Quick Starts',
+      items: [
+        'tutorials/quick-start',
+        'tutorials/proxy-modes',
+      ],
+    },
+    {
+      type: 'category',
       label: 'CLI Reference',
       items: [
         'cli/core',
