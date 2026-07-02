@@ -25,26 +25,6 @@ When executed, this command requests user confirmation before proceeding. Once c
 2. **Index Reset:** Constructs an empty `PushCacheIndex` containing an empty `Entries` map and an empty `GCRoots` slice.
 3. **Registry Update:** Uses `proxy.BootstrapConfigWithAnnotations` to resolve network parameters, configures R2 via `network.GetR2Config`, and executes `network.UpdateCacheIndex()` to push the empty state back to the OCI registry backend.
 
-## `gc` (Garbage Collection)
-
-The `gc` command performs cache garbage collection, purging unreferenced blobs from the backing storage up to a specified quota.
-
-**Usage:**
-```bash
-aeroflare gc [flags]
-```
-
-**Flags:**
-- `--max-freed <bytes>`: Instruct the garbage collector to delete at most this many bytes.
-- `--print-roots`: Print the currently tracked GC roots (`GCRoots` slice from the remote index).
-- `--print-live`: Dump paths evaluated as live during traversal.
-- `--print-dead`: Dump paths evaluated as dead and slated for cleanup.
-
-### Technical Mechanics
-
-1. **State Fetch:** The cache state is pulled down by calling `network.FetchCacheIndex()`.
-2. **Traversal:** The command delegates graph traversal to `network.RunGC(index, maxFreed)`. The GC inspects paths reachable from `GCRoots`.
-3. **Execution & Writeback:** Any objects unreachable from roots (or exceeding boundaries) are purged. If `result.FreedBytes > 0`, the mutated index is then pushed back up using `network.UpdateCacheIndex()`. 
 
 ## `push-blob` and `pull-blob`
 

@@ -5,17 +5,8 @@ title: Cache Maintenance
 
 # Cache Maintenance
 
-Over time, your binary cache will accumulate blobs that are no longer referenced by active deployments. 
+Aeroflare sometimes maintains a remote index to speed up cache hit resolution without repeatedly querying the OCI manifest layer. 
 
-## Garbage Collection
-
-The `gc` command analyzes the remote cache and deletes blobs that are stale or unreferenced.
-
-```bash
-nix run github:ItzEmoji/aeroflare -- gc
-```
-
-*Note: Garbage collection relies on resolving the root derivations. Depending on the backend (especially OCI registries), this operation can take a significant amount of time.*
 
 ## Cleaning the Index
 
