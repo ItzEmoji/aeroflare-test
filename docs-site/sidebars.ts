@@ -30,6 +30,16 @@ const sidebars: SidebarsConfig = {
         'reference/cli',
         'reference/configuration',
         'reference/repository-layout',
+        {
+          type: 'category',
+          label: 'CLI Implementation Details',
+          items: [
+            'cli/core',
+            'cli/auth',
+            'cli/cache',
+            'cli/maintenance',
+          ],
+        },
       ],
     },
     {

@@ -23,7 +23,7 @@ Below is a comparison of how the three variants resolve paths, handle indexes, a
 | :--- | :--- | :--- | :--- |
 | **Metadata Source** | Monolithic JSON index in OCI | Dedicated OCI Manifest per tag | Cloudflare R2 Object Store |
 | **NAR Binary Source** | OCI Registry Blobs | OCI Registry Blobs | OCI Registry Blobs |
-| **Lookup Complexity** | $O(1)$ memory read after load | $O(1)$ dynamic manifest request | $O(1)$ R2 Object HTTP fetch |
+| **Lookup Complexity** | `O(1)` memory read after load | `O(1)` dynamic manifest request | `O(1)` R2 Object HTTP fetch |
 | **Setup Overhead** | Simple, standard registries | Simple, standard registries | Medium (Requires R2 Bucket configuration) |
 | **Index Syncing** | Push updates central `cache-index` | None. Independent manifests | None. Direct metadata uploads |
 | **Recommended for** | Registries with slow manifest API response times | Standard setups requiring zero-state indexing | Production workloads demanding low-latency metadata queries |

@@ -35,7 +35,7 @@ Aeroflare securely saves these tokens for future use.
 Aeroflare operates as a local proxy that intercepts Nix daemon requests. To spin up the proxy server, use:
 
 ```bash
-nix run github:ItzEmoji/aeroflare -- proxy start
+nix run github:ItzEmoji/aeroflare -- proxy
 ```
 
 > **Note:** This command runs in the foreground and will block your terminal. Please run it in the background or open a new terminal window to proceed with the next steps.
@@ -82,7 +82,7 @@ jobs:
         nix run github:ItzEmoji/aeroflare -- run -- \
           nix build .#default --print-out-paths
       env:
-        AEROFLARE_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         AEROFLARE_CACHE_URL: ghcr.io/${{ github.repository }}
 ```
 
