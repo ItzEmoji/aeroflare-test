@@ -13,6 +13,41 @@ Aeroflare is designed to map the standard Nix Binary Cache protocol directly ont
 2. **OCI Network Layer**: Translates Nix metadata into OCI registry primitives (Manifests and Layers).
 3. **Provisioning Wizard**: Configures upstream infrastructure (Cloudflare R2 or GitHub Container Registry) natively.
 
+## Nix Substitution Sequence Diagram
+
+The sequence below maps out how a Nix Daemon queries the local Aeroflare proxy, which translates the request to OCI manifest retrievals:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Nix as Nix Daemon
+    participant Proxy as Aeroflare Proxy
+    participant OCI as OCI Registry
+    participant Cache as Upstream (cache.nixos.org)
+
+    Nix->>Proxy: GET /<hash>.narinfo
+    Proxy->>OCI: GET /v2/repo/manifests/<hash>
+    alt Manifest Found in Registry
+        OCI-->>Proxy: Return OCI Manifest (with metadata in annotations)
+        Proxy->>Proxy: Parse annotations and reconstruct plain narinfo
+        Proxy-->>Nix: HTTP 200 OK (text/x-nix-narinfo)
+    else Manifest Missing (Registry Cache Miss)
+        Proxy->>Cache: GET /<hash>.narinfo
+        alt Upstream Found
+            Cache-->>Proxy: Return narinfo
+            Proxy-->>Nix: HTTP 200 OK
+        else Upstream Missing
+            Cache-->>Proxy: HTTP 404 Not Found
+            Proxy-->>Nix: HTTP 404 Not Found
+        end
+    end
+
+    Nix->>Proxy: GET /nar/<narinfo-url-path>.nar
+    Proxy->>OCI: Stream blob via /v2/repo/blobs/<digest>
+    OCI-->>Proxy: Streaming binary bytes
+    Proxy-->>Nix: Forward stream with HTTP 200 OK
+```
+
 ## Design Invariants
 
 ### 1. Stateless Proxying

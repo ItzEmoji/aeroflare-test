@@ -9,6 +9,17 @@ Aeroflare is a high-performance proxy cache and toolkit for Nix binaries, backed
 
 The tool bridges the Nix ecosystem and standard container registries (such as GitHub Container Registry or Docker Hub). By treating Nix archive (NAR) files and `narinfo` metadata as OCI blobs and manifests, Aeroflare leverages existing registry infrastructure to store and distribute Nix build artifacts.
 
+## How Nix Caches Work vs the OCI Bridge
+
+In a standard Nix binary cache setup, Nix needs two things to fetch a cached build output:
+1. A `.narinfo` file: A plaintext metadata descriptor containing cryptographic signatures, package hashes, size information, and store references.
+2. A `.nar` archive: The compressed archive containing the actual files and directories of the build output.
+
+Traditional caches store these flat on a server or object bucket. Aeroflare replaces this setup entirely by mapping these files to OCI objects:
+- The **NAR Archive** becomes a **layer blob** inside the container image.
+- The **Narinfo Metadata** is converted into key-value **annotations** on the OCI Manifest.
+- The **Package Hash** becomes the **tag** of the container image, making reads and writes direct and database-free.
+
 ## Core Capabilities
 
 1. **Proxy Server**: Aeroflare runs a local HTTP server that acts as a standard Nix substituter. It handles requests from the Nix daemon, fetches the corresponding OCI artifacts from the remote registry, and serves them seamlessly.
