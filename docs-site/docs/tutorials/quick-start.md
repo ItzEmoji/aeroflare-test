@@ -15,13 +15,16 @@ The fastest way to get started is to use the interactive setup wizard via Nix. T
 nix run github:ItzEmoji/aeroflare -- init
 ```
 
-The `init` command guides you through backend selection and automatically provisions the required buckets or namespaces.
+The `init` command guides you through an interactive setup:
+1. It asks for integration with GitHub or GitLab.
+2. It automatically creates a private repository to host your cache.
+3. Finally, it deploys a serverless worker which acts as your remote proxy.
 
 :::info Authentication
 
 During initialization, the wizard will prompt you for the necessary credentials. If you don't have them defined in your local OS keychain or secrets manager, you'll be asked to provide:
 
-- A **GitHub Personal Access Token** (if using GHCR)
+- A **GitHub / GitLab Personal Access Token**
 - Or a **Cloudflare API Token** (if using Cloudflare R2)
 
 Aeroflare securely saves these tokens for future use.
@@ -45,8 +48,10 @@ With your infrastructure initialized and proxy running, you can execute a cached
 
 This command configures your Nix daemon to use the proxy as an official substituter, executes your target command, and automatically pushes any resulting output paths back to the cache.
 
+> **Important:** Currently, if you want Aeroflare to successfully push the resulting artifacts, you must pass the `--print-out-paths` flag to your Nix build command so Aeroflare knows what to upload.
+
 ```bash
-nix run github:ItzEmoji/aeroflare -- run -- nix build .#default
+nix run github:ItzEmoji/aeroflare -- run -- nix build .#default --print-out-paths
 ```
 
 ### The Cache Lifecycle:
