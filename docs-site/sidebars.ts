@@ -4,26 +4,40 @@ const sidebars: SidebarsConfig = {
   tutorialSidebar: [
     {
       type: 'category',
-      label: 'Tutorials & Quick Starts',
+      label: 'Tutorials & Getting Started',
       items: [
+        'tutorials/introduction',
+        'tutorials/installation',
         'tutorials/quick-start',
         'tutorials/proxy-modes',
       ],
     },
     {
       type: 'category',
-      label: 'CLI Reference',
+      label: 'How-to Guides',
       items: [
-        'cli/core',
-        'cli/auth',
-        'cli/cache',
-        'cli/maintenance',
+        'how-to/configuring-backends',
+        'how-to/running-proxy',
+        'how-to/cache-population',
+        'how-to/cache-maintenance',
+        'how-to/authentication',
       ],
     },
     {
       type: 'category',
-      label: 'Architecture & Internals',
+      label: 'Reference',
       items: [
+        'reference/cli',
+        'reference/configuration',
+        'reference/repository-layout',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Concepts & Architecture',
+      items: [
+        'explanation/architecture',
+        'explanation/oci-integration',
         'internals/architecture',
         'internals/subsystems',
         'internals/proxy-implementations',
