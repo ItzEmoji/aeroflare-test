@@ -12,7 +12,16 @@ import (
 	"strings"
 	"time"
 
+	"aeroflare/src/proxy"
+
+	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/static"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 )
 
 // Types for cache-index.json management
@@ -270,57 +279,43 @@ func UpdateCacheIndex(receipts []PushReceipt, existingIndex *PushCacheIndex, reg
 
 // PushConfigManifest pushes the cache-config manifest with the provided annotations.
 func PushConfigManifest(registry, repository, token string, annotations map[string]string) error {
-	if reg, err := name.NewRegistry(registry); err == nil {
-		registry = reg.RegistryStr()
+	opts := []name.Option{}
+	if proxy.GetProtocol(registry) == "http" {
+		opts = append(opts, name.Insecure)
 	}
-	scheme := "https"
-	if strings.HasPrefix(registry, "localhost:") || strings.HasPrefix(registry, "127.0.0.1:") {
-		scheme = "http"
-	}
-	manifestURL := fmt.Sprintf("%s://%s/v2/%s/manifests/cache-config", scheme, registry, repository)
 
-	// Push empty config JSON as blob
-	outConfig, _ := os.CreateTemp("", "empty-config-*.json")
-	defer func() { _ = os.Remove(outConfig.Name()) }()
-	configContent := fmt.Sprintf(`{"created":"%s"}`, time.Now().UTC().Format(time.RFC3339Nano))
-	_ = os.WriteFile(outConfig.Name(), []byte(configContent), 0644)
-
-	configDigest, err := PushBlob(outConfig.Name(), registry, repository, token)
+	refStr := fmt.Sprintf("%s/%s:cache-config", registry, repository)
+	tagRef, err := name.NewTag(refStr, opts...)
 	if err != nil {
-		return fmt.Errorf("push config blob: %w", err)
-	}
-	configStat, _ := os.Stat(outConfig.Name())
-
-	// Push Cache-Config Manifest
-	manifest := map[string]interface{}{
-		"schemaVersion": 2,
-		"mediaType":     "application/vnd.oci.image.manifest.v1+json",
-		"config": map[string]interface{}{
-			"mediaType": "application/vnd.oci.image.config.v1+json",
-			"digest":    configDigest,
-			"size":      configStat.Size(),
-		},
-		"annotations": annotations,
+		return fmt.Errorf("failed to create tag: %w", err)
 	}
 
-	manifestBytes, _ := json.Marshal(manifest)
-	client := &http.Client{Timeout: 30 * time.Second}
-	putReq, err := http.NewRequest("PUT", manifestURL, bytes.NewReader(manifestBytes))
+	cacheImg := empty.Image
+	cacheImg = mutate.MediaType(cacheImg, types.OCIManifestSchema1)
+	cacheImg = mutate.ConfigMediaType(cacheImg, "application/vnd.oci.empty.v1+json")
+
+	emptyLayer := static.NewLayer([]byte("{}"), "application/vnd.oci.empty.v1+json")
+	cacheImg, err = mutate.AppendLayers(cacheImg, emptyLayer)
 	if err != nil {
-		return fmt.Errorf("create manifest put request: %w", err)
+		return fmt.Errorf("failed to append empty layer: %w", err)
 	}
-	putReq.Header.Set("Authorization", "Bearer "+token)
-	putReq.Header.Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
 
-	putResp, err := client.Do(putReq)
-	if err != nil {
-		return fmt.Errorf("push manifest: %w", err)
+	cacheImg = mutate.Annotations(cacheImg, annotations).(v1.Image)
+
+	finalCacheImg := &withArtifactType{
+		Image:        cacheImg,
+		artifactType: "application/vnd.aeroflare.cache-config.v1",
 	}
-	defer func() { _ = putResp.Body.Close() }()
 
-	if putResp.StatusCode != http.StatusCreated && putResp.StatusCode != http.StatusOK {
-		respBytes, _ := io.ReadAll(putResp.Body)
-		return fmt.Errorf("push manifest failed with HTTP %d: %s", putResp.StatusCode, string(respBytes))
+	remoteOpts := []remote.Option{
+		remote.WithTransport(optimizedTransport),
+	}
+	if token != "" {
+		remoteOpts = append(remoteOpts, remote.WithAuth(&authn.Bearer{Token: token}))
+	}
+
+	if err := remote.Write(tagRef, finalCacheImg, remoteOpts...); err != nil {
+		return fmt.Errorf("failed to push config manifest: %w", err)
 	}
 
 	return nil
