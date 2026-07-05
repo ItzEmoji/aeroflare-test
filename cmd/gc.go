@@ -64,10 +64,9 @@ var gcCmd = &cobra.Command{
 		if result.FreedBytes > 0 {
 			tokenMgr := proxy.NewTokenManager(registry, repository, "")
 			_, configAnnotations, _ := proxy.BootstrapConfigWithAnnotations(context.Background(), nil, registry, repository, tokenMgr)
-			r2Cfg := network.GetR2Config(configAnnotations)
 
 			PrintInfo("Pushing updated remote index...")
-			err = network.UpdateCacheIndex(nil, index, registry, repository, ociToken, "", r2Cfg, configAnnotations)
+			err = network.UpdateCacheIndex(nil, index, registry, repository, ociToken, "", configAnnotations)
 			if err != nil {
 				PrintError(fmt.Sprintf("Failed to push updated remote index: %v", err))
 				os.Exit(1)

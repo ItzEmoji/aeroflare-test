@@ -51,6 +51,11 @@ func NewTokenManager(registry, repository, githubToken string) *TokenManager {
 	}
 }
 
+// SetOverrideToken sets a static bearer token, bypassing token exchange.
+func (tm *TokenManager) SetOverrideToken(token string) {
+	tm.overrideToken = token
+}
+
 // GetToken returns a valid OCI Bearer token, performing token exchange if necessary.
 func (tm *TokenManager) GetToken(ctx context.Context) (string, error) {
 	if tm.overrideToken != "" {

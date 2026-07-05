@@ -335,6 +335,10 @@ func TestProxyServer_ServePublicKey_FromServerField(t *testing.T) {
 // TestProxyServer_HandleRefresh_NoWorker_Success verifies /_refresh triggers a CacheIndex refresh via a mock registry.
 func TestProxyServer_HandleRefresh_NoWorker_Success(t *testing.T) {
 	mockRegistry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v2/" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		if r.URL.Path == "/token" {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"token": "refresh-token"}`))
@@ -342,10 +346,10 @@ func TestProxyServer_HandleRefresh_NoWorker_Success(t *testing.T) {
 		}
 		if strings.HasSuffix(r.URL.Path, "/manifests/cache-index") {
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"layers": [{"digest": "sha256:indexblob", "size": 50}]}`))
+			_, _ = w.Write([]byte(`{"layers": [{"digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "size": 50}]}`))
 			return
 		}
-		if strings.HasSuffix(r.URL.Path, "/blobs/sha256:indexblob") {
+		if strings.HasSuffix(r.URL.Path, "/blobs/sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef") {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"entries": {"abc123": {"narinfo": "URL: nar/abc.nar.xz\n", "nar_digest": "sha256:abc"}}, "public_key": "refresh-key", "generated": "now"}`))
 			return
@@ -388,6 +392,7 @@ func TestProxyServer_HandleRefresh_NoWorker_Success(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
+	t.Logf("Result: %v", result)
 	if result["refreshed"] != true {
 		t.Errorf("Expected refreshed=true, got %v", result["refreshed"])
 	}

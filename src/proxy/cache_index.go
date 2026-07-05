@@ -14,6 +14,10 @@ import (
 	"time"
 
 	network "aeroflare/src"
+
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
 // CacheIndex handles loading, refreshing, and querying the cache index.
@@ -49,7 +53,13 @@ func (ci *CacheIndex) IndexType() string {
 	if t := ci.ManifestAnnotations["aeroflare.index-type"]; t != "" {
 		return t
 	}
+	if t := ci.ManifestAnnotations["aeroflare.backend"]; t != "" {
+		return t
+	}
 	if t := ci.ManifestAnnotations["index-type"]; t != "" {
+		return t
+	}
+	if t := ci.ManifestAnnotations["backend"]; t != "" {
 		return t
 	}
 	return "json"
@@ -202,35 +212,18 @@ func (ci *CacheIndex) refresh(ctx context.Context) error {
 	proto := network.GetProtocol(ci.Registry)
 
 	// 1. Fetch manifest — this is the single source of truth for annotations.
-	manifestURL := fmt.Sprintf("%s://%s/v2/%s/manifests/cache-index", proto, ci.Registry, ci.Repository)
-	req, err := http.NewRequestWithContext(ctx, "GET", manifestURL, nil)
+	anns, err := network.FetchAeroflareAnnotations(ctx, client, ci.Registry, ci.Repository, "cache-config", token)
 	if err != nil {
-		return fmt.Errorf("failed creating manifest request: %w", err)
-	}
-	req.Header.Set("Accept", ociManifestMediaType) // Konstante aus bootstrap.go
-	req.Header.Set("User-Agent", userAgent)        // Konstante aus bootstrap.go
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed fetching manifest from %s: %w", manifestURL, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("manifest HTTP %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	var manifest IndexManifest
-	if err := json.NewDecoder(resp.Body).Decode(&manifest); err != nil {
-		return fmt.Errorf("failed decoding manifest JSON: %w", err)
+		slog.Error("cache-config failed", "err", err)
+		anns, err = network.FetchAeroflareAnnotations(ctx, client, ci.Registry, ci.Repository, "cache-index", token)
+		if err != nil {
+			slog.Error("cache-index failed", "err", err)
+			return fmt.Errorf("failed to fetch config annotations: %w", err)
+		}
 	}
 
 	ci.mu.Lock()
-	ci.ManifestAnnotations = manifest.Annotations
+	ci.ManifestAnnotations = anns
 	ci.mu.Unlock()
 
 	indexType := ci.IndexType()
@@ -250,15 +243,46 @@ func (ci *CacheIndex) refresh(ctx context.Context) error {
 		return nil
 	}
 
+	// 2. Fetch cache-index manifest to get the json index blob
+	imageRef := fmt.Sprintf("%s/%s:cache-index", ci.Registry, ci.Repository)
+	ref, err := name.ParseReference(imageRef)
+	if err != nil {
+		return fmt.Errorf("failed to parse reference: %w", err)
+	}
+
+	opts := []remote.Option{
+		remote.WithContext(ctx),
+	}
+	if client != nil && client.Transport != nil {
+		opts = append(opts, remote.WithTransport(client.Transport))
+	} else if client != nil {
+		opts = append(opts, remote.WithTransport(http.DefaultTransport))
+	}
+	if token != "" {
+		opts = append(opts, remote.WithAuth(&authn.Bearer{Token: token}))
+	} else {
+		opts = append(opts, remote.WithAuthFromKeychain(authn.DefaultKeychain))
+	}
+
+	img, err := remote.Image(ref, opts...)
+	if err != nil {
+		return fmt.Errorf("failed to fetch image: %w", err)
+	}
+
+	manifest, err := img.Manifest()
+	if err != nil {
+		return fmt.Errorf("failed to read manifest: %w", err)
+	}
+
 	if len(manifest.Layers) == 0 {
 		return fmt.Errorf("no layers in cache-index manifest")
 	}
 
-	digest := manifest.Layers[0].Digest
+	digest := manifest.Layers[0].Digest.String()
 
 	// 2. Fetch blob (json mode)
 	blobURL := fmt.Sprintf("%s://%s/v2/%s/blobs/%s", proto, ci.Registry, ci.Repository, digest)
-	req, err = http.NewRequestWithContext(ctx, "GET", blobURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", blobURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed creating blob request: %w", err)
 	}
@@ -268,7 +292,7 @@ func (ci *CacheIndex) refresh(ctx context.Context) error {
 	}
 
 	blobClient := &http.Client{Timeout: 120 * time.Second}
-	resp, err = blobClient.Do(req)
+	resp, err := blobClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed fetching blob from %s: %w", blobURL, err)
 	}

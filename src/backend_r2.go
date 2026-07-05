@@ -44,8 +44,15 @@ func (b *R2Backend) PushReceipts(ctx context.Context, receipts []PushReceipt) er
 		return err
 	}
 
-	// Push chunked manifest to prevent orphaning
-	if len(layers) > 0 {
+	// Push chunked manifests to prevent orphaning
+	chunkSize := 5000
+	for i := 0; i < len(layers); i += chunkSize {
+		end := i + chunkSize
+		if end > len(layers) {
+			end = len(layers)
+		}
+		chunk := layers[i:end]
+
 		manifest := map[string]interface{}{
 			"schemaVersion": 2,
 			"mediaType":     "application/vnd.oci.image.manifest.v1+json",
@@ -54,15 +61,15 @@ func (b *R2Backend) PushReceipts(ctx context.Context, receipts []PushReceipt) er
 				"digest":    "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
 				"size":      2,
 			},
-			"layers": layers,
+			"layers": chunk,
 		}
 
 		manifestBytes, err := json.Marshal(manifest)
 		if err != nil {
 			return fmt.Errorf("failed to marshal chunk manifest: %w", err)
 		}
-		
-		chunkTag := fmt.Sprintf("chunk-%d", time.Now().UnixNano())
+
+		chunkTag := fmt.Sprintf("chunk-%d-%d", time.Now().UnixNano(), i/chunkSize)
 		protocol := GetProtocol(b.cfg.Registry)
 		manifestURL := fmt.Sprintf("%s://%s/v2/%s/manifests/%s", protocol, b.cfg.Registry, b.cfg.Repository, chunkTag)
 
@@ -70,7 +77,7 @@ func (b *R2Backend) PushReceipts(ctx context.Context, receipts []PushReceipt) er
 		if err != nil {
 			return fmt.Errorf("failed to create chunk manifest request: %w", err)
 		}
-		
+
 		req.Header.Set("Authorization", "Bearer "+b.cfg.Token)
 		req.Header.Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
 
@@ -78,11 +85,12 @@ func (b *R2Backend) PushReceipts(ctx context.Context, receipts []PushReceipt) er
 		if err != nil {
 			return fmt.Errorf("failed to push chunk manifest: %w", err)
 		}
-		defer resp.Body.Close()
 		
 		if resp.StatusCode >= 300 {
-		    return fmt.Errorf("unexpected status pushing chunk manifest: %s", resp.Status)
+			resp.Body.Close()
+			return fmt.Errorf("unexpected status pushing chunk manifest: %s", resp.Status)
 		}
+		resp.Body.Close()
 	}
 
 	return nil

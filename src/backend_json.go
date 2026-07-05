@@ -15,5 +15,5 @@ func (b *JSONBackend) PushReceipts(ctx context.Context, receipts []PushReceipt) 
 		return fmt.Errorf("failed to fetch existing index: %w", err)
 	}
 
-	return UpdateCacheIndex(receipts, existingIndex, b.cfg.Registry, b.cfg.Repository, b.cfg.Token, b.cfg.PubKeyPath, nil, b.cfg.ConfigAnnotations)
+	return UpdateCacheIndex(receipts, existingIndex, b.cfg.Registry, b.cfg.Repository, b.cfg.Token, b.cfg.PubKeyPath, b.cfg.ConfigAnnotations)
 }

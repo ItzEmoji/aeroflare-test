@@ -376,6 +376,7 @@ func RunPush(plan *PushPlan) error {
 					NarinfoPath: r.NarinfoPath,
 					NarDigest:   narDigest,
 					NarSize:     narStat.Size(),
+					NarPath:     r.NarPath,
 					IsRoot:      isRoot,
 				})
 				mu.Unlock()

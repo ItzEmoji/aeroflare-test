@@ -85,6 +85,7 @@ Sig: `
 			NarinfoPath: narinfoPath,
 			NarDigest:   "sha256:fake",
 			NarSize:     13,
+			NarPath:     narPath,
 			IsRoot:      true,
 		},
 	}

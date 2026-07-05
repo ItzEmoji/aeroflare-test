@@ -9,7 +9,10 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
 type withArtifactType struct {
@@ -82,45 +85,50 @@ func ParseAeroflareMetadata(content string) (map[string]string, error) {
 }
 
 func FetchAeroflareAnnotations(ctx context.Context, client *http.Client, registry, repository, tag, token string) (map[string]string, error) {
-	if client == nil {
-		client = http.DefaultClient
-	}
-
-	proto := GetProtocol(registry)
-	manifestURL := fmt.Sprintf("%s://%s/v2/%s/manifests/%s", proto, registry, repository, tag)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", manifestURL, nil)
+	imageRef := fmt.Sprintf("%s/%s:%s", registry, repository, tag)
+	ref, err := name.ParseReference(imageRef)
 	if err != nil {
-		return nil, fmt.Errorf("failed creating manifest request: %w", err)
+		return nil, fmt.Errorf("failed to parse reference: %w", err)
 	}
-	
-	req.Header.Set("Accept", "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json")
+
+	opts := []remote.Option{
+		remote.WithContext(ctx),
+	}
+	if client != nil && client.Transport != nil {
+		opts = append(opts, remote.WithTransport(client.Transport))
+	} else if client != nil {
+		opts = append(opts, remote.WithTransport(http.DefaultTransport))
+	}
 	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+		opts = append(opts, remote.WithAuth(&authn.Bearer{Token: token}))
+	} else {
+		opts = append(opts, remote.WithAuthFromKeychain(authn.DefaultKeychain))
 	}
 
-	resp, err := client.Do(req)
+	img, err := remote.Image(ref, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("failed fetching manifest from %s: %w", manifestURL, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("manifest HTTP %d for %s", resp.StatusCode, manifestURL)
+		return nil, fmt.Errorf("failed to fetch image: %w", err)
 	}
 
-	var manifest struct {
+	raw, err := img.RawManifest()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read raw manifest: %w", err)
+	}
+
+	var rawManifest struct {
 		Annotations map[string]string `json:"annotations"`
+		Labels      map[string]string `json:"labels"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&manifest); err != nil {
-		return nil, fmt.Errorf("failed decoding manifest JSON: %w", err)
+	if err := json.Unmarshal(raw, &rawManifest); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal raw manifest: %w", err)
 	}
 
 	result := make(map[string]string)
-	for key, val := range manifest.Annotations {
-		if strings.HasPrefix(key, "aeroflare.") {
-			result[key] = val
-		}
+	for key, val := range rawManifest.Annotations {
+		result[key] = val
+	}
+	for key, val := range rawManifest.Labels {
+		result[key] = val
 	}
 
 	return result, nil

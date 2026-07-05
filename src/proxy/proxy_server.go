@@ -39,7 +39,7 @@ func (ps *ProxyServer) Handler(w http.ResponseWriter, r *http.Request) {
 		case path == "/public-key":
 			ps.servePublicKey(w, r)
 		case path == "/api/public-key":
-			ps.serveApiPublicKey(w)
+			ps.serveApiPublicKey(w, r)
 		case path == "/_status":
 			ps.serveStatus(w, r)
 		case strings.HasSuffix(path, ".narinfo"):
@@ -70,6 +70,9 @@ func (ps *ProxyServer) serveNixCacheInfo(w http.ResponseWriter) {
 }
 
 func (ps *ProxyServer) servePublicKey(w http.ResponseWriter, r *http.Request) {
+	// Ensure cache index is loaded to populate ManifestAnnotations
+	ps.CacheIndex.Get(r.Context())
+
 	// Primary source: the cache-index manifest annotation.
 	ps.CacheIndex.mu.RLock()
 	pubKey := ""
@@ -101,7 +104,10 @@ func (ps *ProxyServer) servePublicKey(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (ps *ProxyServer) serveApiPublicKey(w http.ResponseWriter) {
+func (ps *ProxyServer) serveApiPublicKey(w http.ResponseWriter, r *http.Request) {
+	// Ensure cache index is loaded to populate ManifestAnnotations
+	ps.CacheIndex.Get(r.Context())
+
 	ps.CacheIndex.mu.RLock()
 	annotations := ps.CacheIndex.ManifestAnnotations
 	ps.CacheIndex.mu.RUnlock()
@@ -184,6 +190,9 @@ func (ps *ProxyServer) handleRefresh(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ps *ProxyServer) serveNarInfo(w http.ResponseWriter, r *http.Request, path string) {
+	// Ensure cache is initialized before checking IndexType
+	ps.CacheIndex.Get(r.Context())
+
 	storeHash := strings.TrimPrefix(path, "/")
 	storeHash = strings.TrimSuffix(storeHash, ".narinfo")
 
@@ -228,6 +237,9 @@ func (ps *ProxyServer) serveNarInfo(w http.ResponseWriter, r *http.Request, path
 }
 
 func (ps *ProxyServer) serveNar(w http.ResponseWriter, r *http.Request, path string, method string) {
+	// Ensure cache is initialized before checking IndexType
+	ps.CacheIndex.Get(r.Context())
+
 	narBasename := strings.TrimPrefix(path, "/nar/")
 	contentType := "application/x-nix-nar"
 	if strings.HasSuffix(narBasename, ".xz") {

@@ -50,6 +50,7 @@ type PushReceipt struct {
 	NarinfoPath string
 	NarDigest   string
 	NarSize     int64
+	NarPath     string
 	IsRoot      bool
 }
 
@@ -107,7 +108,7 @@ func FetchCacheIndex(registry, repository, token string) (*PushCacheIndex, error
 }
 
 // UpdateCacheIndex merges new entries into existingIndex and pushes the updated manifest.
-func UpdateCacheIndex(receipts []PushReceipt, existingIndex *PushCacheIndex, registry, repository, token, pubKeyPath string, r2Cfg *R2Config, configAnnotations map[string]string) error {
+func UpdateCacheIndex(receipts []PushReceipt, existingIndex *PushCacheIndex, registry, repository, token, pubKeyPath string, configAnnotations map[string]string) error {
 
 	if reg, err := name.NewRegistry(registry); err == nil {
 		registry = reg.RegistryStr()
@@ -155,13 +156,14 @@ func UpdateCacheIndex(receipts []PushReceipt, existingIndex *PushCacheIndex, reg
 	newEntriesCount := 0
 	var mu sync.Mutex
 	var eg errgroup.Group
+	eg.SetLimit(20)
 
 	for _, r := range receipts {
 		r := r
 		eg.Go(func() error {
 			b, err := os.ReadFile(r.NarinfoPath)
 			if err != nil {
-				return nil
+				return fmt.Errorf("failed to read narinfo (%s): %w", r.NarinfoPath, err)
 			}
 
 			basename := filepath.Base(r.StorePath)
@@ -254,11 +256,7 @@ func UpdateCacheIndex(receipts []PushReceipt, existingIndex *PushCacheIndex, reg
 		}
 	}
 
-	if r2Cfg != nil && r2Cfg.PublicURL != "" {
-		manifestAnnotations["aeroflare.index-type"] = "r2"
-		manifestAnnotations["public-r2-url"] = r2Cfg.PublicURL
-		manifestAnnotations["aeroflare.r2.public_url"] = r2Cfg.PublicURL
-	} else if manifestAnnotations["aeroflare.index-type"] == "" {
+	if manifestAnnotations["aeroflare.index-type"] == "" {
 		manifestAnnotations["aeroflare.index-type"] = "json"
 	}
 

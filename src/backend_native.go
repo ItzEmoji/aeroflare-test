@@ -36,21 +36,13 @@ func (b *NativeBackend) PushReceipts(ctx context.Context, receipts []PushReceipt
 				return fmt.Errorf("failed to parse narinfo (%s): %w", r.NarinfoPath, err)
 			}
 
-			base := strings.TrimSuffix(r.NarinfoPath, ".narinfo")
-			narPath := ""
-			for _, ext := range []string{".nar", ".nar.zst", ".nar.xz", ".nar.zstd"} {
-				if _, err := os.Stat(base + ext); err == nil {
-					narPath = base + ext
-					break
-				}
-			}
-			if narPath == "" {
-				return fmt.Errorf("could not find .nar file for %s", r.NarinfoPath)
+			if r.NarPath == "" {
+				return fmt.Errorf("could not find .nar file for %s (NarPath is empty)", r.NarinfoPath)
 			}
 
-			layer, _, err := NewLayerFast(narPath, types.MediaType("application/vnd.aeroflare.nar.v1+"+ni.Compression), ni)
+			layer, _, err := NewLayerFast(r.NarPath, types.MediaType("application/vnd.aeroflare.nar.v1+"+ni.Compression), ni)
 			if err != nil {
-				return fmt.Errorf("failed to create layer for (%s): %w", narPath, err)
+				return fmt.Errorf("failed to create layer for (%s): %w", r.NarPath, err)
 			}
 
 			basename := filepath.Base(ni.StorePath)
