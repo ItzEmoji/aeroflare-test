@@ -295,7 +295,7 @@ func RunPush(plan *PushPlan) error {
 		printStep(2, 3, fmt.Sprintf("Uploading %d packages to OCI registry", len(tasks)))
 		
 		var mu sync.Mutex
-		eg, egCtx := errgroup.WithContext(ctx)
+		eg, _ := errgroup.WithContext(ctx)
 		eg.SetLimit(plan.Config.Workers)
 
 		for _, t := range tasks {
