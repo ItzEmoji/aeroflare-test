@@ -16,6 +16,9 @@ import (
 	"golang.org/x/crypto/nacl/box"
 )
 
+// githubOAuthClientID is the OAuth App client ID used for the GitHub Device
+// Flow fallback (see githubDeviceFlow below), when no token is found in the
+// environment or secrets manager.
 const githubOAuthClientID = "Ov23liIJyLpd2Cse5gne"
 
 // detectGitHubToken returns a GitHub token from common environment variables or secrets manager.
@@ -120,7 +123,8 @@ func createGitHubRepo(token, repoName string) (string, error) {
 	}
 	_ = json.Unmarshal(respBody, &result)
 
-	// Embed token in clone URL for authenticated push.
+	// Embed the token in the clone URL (as the "x-access-token" user) so the
+	// later `git push` in pushToGitRepo can authenticate without a prompt.
 	cloneURL := strings.Replace(result.CloneURL, "https://", fmt.Sprintf("https://x-access-token:%s@", token), 1)
 	return cloneURL, nil
 }
@@ -154,6 +158,8 @@ func createGitLabRepo(token, repoName string) (string, error) {
 	}
 	_ = json.Unmarshal(respBody, &result)
 
+	// Embed the token in the clone URL (as the "oauth2" user, GitLab's
+	// convention) for the same reason as createGitHubRepo above.
 	cloneURL := strings.Replace(result.HTTPUrlToRepo, "https://", fmt.Sprintf("https://oauth2:%s@", token), 1)
 	return cloneURL, nil
 }
@@ -312,7 +318,9 @@ func ensureGitLabProjectExists(token, fullProjectName string) error {
 	return nil
 }
 
-// setGitHubSecret encrypts and sets a repository secret on GitHub via Actions Secrets API.
+// setGitHubSecret sets a repository secret via the GitHub Actions Secrets
+// API. GitHub requires secret values to be sealed with the repo's public
+// key (libsodium/NaCl box) before upload, so this fetches that key first.
 func setGitHubSecret(token, owner, repo, secretName, secretValue string) error {
 	pubKeyReq, err := http.NewRequest("GET", fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/secrets/public-key", owner, repo), nil)
 	if err != nil {

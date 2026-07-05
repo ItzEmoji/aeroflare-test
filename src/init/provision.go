@@ -102,9 +102,13 @@ func createOCIRepository(cfg *InitConfig) error {
 		}
 	}
 
+	// When the registry is the provider's own container registry (ghcr.io
+	// for GitHub, registry.gitlab.com for GitLab), the git token we already
+	// collected also works as the OCI token, so pass it through explicitly
+	// instead of making network.GetToken look for a separate credential.
 	var explicitToken string
-	if (cfg.Registry == "ghcr.io" && cfg.GitProvider == GitGitHub) || 
-	   (cfg.Registry == "registry.gitlab.com" && cfg.GitProvider == GitGitLab) {
+	if (cfg.Registry == "ghcr.io" && cfg.GitProvider == GitGitHub) ||
+		(cfg.Registry == "registry.gitlab.com" && cfg.GitProvider == GitGitLab) {
 		explicitToken = cfg.GitToken
 	}
 
@@ -125,6 +129,9 @@ func createOCIRepository(cfg *InitConfig) error {
 }
 
 // checkRepositoryVisibility reminds the user to set package visibility.
+// There is no API to do this automatically for ghcr.io, so it always
+// returns nil; the caller (RunProvision) only prints the message as a
+// warning, never treats it as a failure.
 func checkRepositoryVisibility(cfg *InitConfig) error {
 	if cfg.Registry != "ghcr.io" {
 		printInfo("Non-ghcr.io registry \u2014 set package visibility to public manually if needed.")
@@ -217,7 +224,9 @@ func pushToGitRepo(cfg *InitConfig) error {
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	// Fetch worker script
+	// Fetch worker script. (Mirrors the backend->suffix mapping in
+	// resolveWorkerScript; duplicated here since pushToGitRepo always fetches
+	// the released script rather than reusing a local override.)
 	backendSuffix := "json"
 	switch cfg.Backend {
 	case BackendR2:
@@ -397,12 +406,14 @@ func workerEnvVars(cfg *InitConfig) map[string]string {
 	}
 }
 
-// sanitizeCloneURL removes embedded tokens from a clone URL for display.
-func sanitizeCloneURL(url string) string {
-	if idx := strings.Index(url, "@"); idx != -1 {
-		prefix := url[:strings.Index(url, "//")+2]
-		suffix := url[idx+1:]
+// sanitizeCloneURL strips the "user:token@" credentials that
+// createGitHubRepo/createGitLabRepo embed in the clone URL, so the token is
+// never printed to the terminal.
+func sanitizeCloneURL(cloneURL string) string {
+	if idx := strings.Index(cloneURL, "@"); idx != -1 {
+		prefix := cloneURL[:strings.Index(cloneURL, "//")+2]
+		suffix := cloneURL[idx+1:]
 		return prefix + suffix
 	}
-	return url
+	return cloneURL
 }

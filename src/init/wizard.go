@@ -34,7 +34,10 @@ func RunWizard() (*InitConfig, error) {
 	return cfg, nil
 }
 
-// promptCoreSettings asks for cache name, registry, backend and git provider.
+// promptCoreSettings asks for cache name, registry, backend and git
+// provider. For each setting, a value already supplied via CLI flag /
+// config (read through viper) is used as-is and no prompt is shown for it;
+// only settings left unspecified are added to the interactive form.
 func promptCoreSettings(cfg *InitConfig) error {
 	var backend string
 	var gitProvider string
@@ -178,13 +181,18 @@ func promptCredentials(cfg *InitConfig) error {
 		}
 	}
 
-	// OCI token detection.
+	// A separate OCI credential is only needed when the registry isn't the
+	// git provider's own registry (ghcr.io+GitHub or registry.gitlab.com+GitLab),
+	// since in those cases the git token doubles as the OCI token (see
+	// createOCIRepository's explicitToken handling).
 	needsOCIToken := (cfg.Registry != "ghcr.io" || cfg.GitProvider != GitGitHub) &&
 		(cfg.Registry != "registry.gitlab.com" || cfg.GitProvider != GitGitLab)
-	
+
+	// Populated only if the credentials form below prompts for them; used
+	// afterwards to persist them to the secrets manager.
 	var ociUsername string
 	var ociToken string
-	
+
 	if needsOCIToken {
 		cfg.OCIToken, _ = auth.ResolveRegistryToken(cfg.Registry)
 	}
@@ -223,6 +231,8 @@ func promptCredentials(cfg *InitConfig) error {
 			cfg.GitToken = githubDeviceFlow()
 		}
 
+		// Fall back to a manual token prompt if the user declined OAuth, or
+		// if the device flow was attempted but didn't yield a token.
 		if !useOAuth || cfg.GitToken == "" {
 			fields = append(fields, huh.NewInput().
 				Title("GitHub Token").

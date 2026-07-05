@@ -72,21 +72,28 @@ type InitConfig struct {
 
 	// Internal fields populated during provisioning.
 	OCIToken    string
-	ScriptTag   string // Worker script tag from CF deployment, used for Workers Builds.
-	CfTokenID   string // Cloudflare API token ID, used for Workers Builds.
-	GitCloneURL string // URL for pushing to the created git repository.
+	ScriptTag   string // Worker script tag returned by the Cloudflare deploy API; reserved for a future Workers Builds integration, not yet read elsewhere.
+	CfTokenID   string // Cloudflare API token ID; reserved for a future Workers Builds integration, not yet read elsewhere.
+	GitCloneURL string // Clone URL (with embedded credentials) for pushing to the created git repository.
 }
 
-// DeriveDefaults populates computed fields from user-supplied values.
+// DeriveDefaults populates computed fields (Repository, WorkerName, R2Bucket)
+// from the cache name, registry and backend the user already supplied.
+// Must be called after CacheName/Registry/Backend are set and before the
+// values are used elsewhere (e.g. by the credentials prompt or provisioning).
 func (c *InitConfig) DeriveDefaults() {
 	c.CacheName = strings.ToLower(c.CacheName)
-	
+
+	// Docker Hub allows "user/repo" style names directly; other registries
+	// (e.g. ghcr.io) get an explicit "/nix-cache" suffix appended.
 	if (c.Registry == "docker.io" || c.Registry == "index.docker.io" || c.Registry == "registry-1.docker.io") && strings.Contains(c.CacheName, "/") {
 		c.Repository = c.CacheName
 	} else {
 		c.Repository = fmt.Sprintf("%s/nix-cache", c.CacheName)
 	}
 
+	// Worker and R2 bucket names can't contain "/", so slashes in the cache
+	// name (e.g. "user/repo") are flattened to hyphens.
 	sanitized := strings.ReplaceAll(c.CacheName, "/", "-")
 	c.WorkerName = fmt.Sprintf("aeroflare-%s", sanitized)
 
@@ -95,7 +102,8 @@ func (c *InitConfig) DeriveDefaults() {
 	}
 }
 
-// Print helpers for consistent terminal output.
+// Print helpers below give the setup wizard and provisioning pipeline a
+// consistent terminal output style (icon + indented message).
 
 func printError(msg string) {
 	fmt.Fprintf(os.Stderr, "  \u2717 %s\n", msg)

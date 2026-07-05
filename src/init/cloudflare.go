@@ -11,7 +11,8 @@ import (
 	"os"
 )
 
-// deployWorkerViaAPI uploads a worker script to Cloudflare Workers.
+// deployWorkerViaAPI uploads a worker script to Cloudflare Workers using the
+// multipart "module upload" format, and returns the deployed script's tag.
 func deployWorkerViaAPI(cfAccountID, cfApiToken, workerName, scriptPath, compatDate string, vars map[string]string, r2Bucket string) (string, error) {
 	scriptContent, err := os.ReadFile(scriptPath)
 	if err != nil {
@@ -96,7 +97,12 @@ func deployWorkerViaAPI(cfAccountID, cfApiToken, workerName, scriptPath, compatD
 	return result.Result.Tag, nil
 }
 
-// enableWorkerRoute enables the workers.dev subdomain route for a worker.
+// enableWorkerRoute enables the workers.dev subdomain route for a worker so
+// it is reachable at https://<worker>.<subdomain>.workers.dev immediately
+// after deployment. The response body/status is intentionally not
+// inspected: the subdomain may already be enabled from a prior run, and
+// callers (see configureWorker) already treat any error here as a
+// non-fatal warning.
 func enableWorkerRoute(cfAccountID, cfApiToken, workerName string) error {
 	payload, _ := json.Marshal(map[string]interface{}{"enabled": true})
 
@@ -116,7 +122,6 @@ func enableWorkerRoute(cfAccountID, cfApiToken, workerName string) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	// Subdomain may already be enabled; not a fatal error.
 	return nil
 }
 

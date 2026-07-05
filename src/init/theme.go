@@ -6,9 +6,12 @@ import (
 	"github.com/spf13/viper"
 )
 
-// AeroflareTheme returns a custom theme with brand colors and rounded borders.
+// AeroflareTheme returns a huh form theme with brand colors and rounded
+// borders, applied consistently across the init wizard and settings command.
 func AeroflareTheme() *huh.Theme {
 	t := huh.ThemeBase()
+	// "theme" is read from viper so it picks up both the --theme flag and
+	// the persisted config value (see cmd/settings.go).
 	themeName := viper.GetString("theme")
 
 	var primaryColor lipgloss.Color
