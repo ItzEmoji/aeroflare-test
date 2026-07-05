@@ -27,6 +27,8 @@ import (
 	"strconv"
 )
 
+// PushConfig holds the resolved settings for a single push invocation:
+// which store paths to push and how to prepare/upload them.
 type PushConfig struct {
 	TargetPaths []string
 	Compression string
@@ -39,6 +41,10 @@ type PushConfig struct {
 	Verbosity   int
 }
 
+// ParseConfig gathers store paths from a positional storePath, an --input
+// file (one path per line, "#" comments ignored), and piped stdin (skipped
+// if stdin is an interactive terminal), then appends any trailing args.
+// It returns an error only if no paths were found from any source.
 func ParseConfig(args []string, storePath string, inputFile string, stdin io.Reader) (*PushConfig, error) {
 	var targetPaths []string
 	if storePath != "" {
@@ -85,6 +91,8 @@ func ParseConfig(args []string, storePath string, inputFile string, stdin io.Rea
 	}, nil
 }
 
+// PushPlan is the result of preflighting a PushConfig: the paths that still
+// need to be pushed, plus how many were filtered out as already cached.
 type PushPlan struct {
 	Config        *PushConfig
 	FilteredPaths []string
@@ -116,6 +124,13 @@ func DisplaySummary(plan *PushPlan) {
 	ui.PrintSummaryBox("Push Summary", fields)
 }
 
+// RunPush executes a PushPlan end to end: it authenticates against the
+// registry, filters out paths already present in the cache index or upstream
+// cache (unless ForcePush is set), then prepares and uploads the remaining
+// paths in fixed-size chunks. Receipts are flushed to the cache backend after
+// each chunk so an interrupted push keeps whatever it already uploaded, and
+// per-path upload failures are reported at the end rather than aborting the
+// whole run (a chunk only aborts outright if every upload in it fails).
 func RunPush(plan *PushPlan) error {
 	startTime := time.Now()
 	var totalUploaded int
@@ -268,7 +283,7 @@ func RunPush(plan *PushPlan) error {
 			printSuccess(fmt.Sprintf("Prepared %d packages", len(results)))
 		}
 
-		pushedPaths := make(map[string]bool)
+		seenPaths := make(map[string]bool)
 
 		type pushTask struct {
 			r      *prepare.Result
@@ -276,12 +291,15 @@ func RunPush(plan *PushPlan) error {
 		}
 		var tasks []pushTask
 
+		// collect flattens each prepared result and its transitive
+		// MissingRefResults into a deduplicated task list, so a dependency
+		// shared by multiple roots is only uploaded once.
 		var collect func(r *prepare.Result, isRoot bool)
 		collect = func(r *prepare.Result, isRoot bool) {
-			if pushedPaths[r.StorePath] {
+			if seenPaths[r.StorePath] {
 				return
 			}
-			pushedPaths[r.StorePath] = true
+			seenPaths[r.StorePath] = true
 
 			tasks = append(tasks, pushTask{r: r, isRoot: isRoot})
 
@@ -434,10 +452,12 @@ func RunPush(plan *PushPlan) error {
 	return nil
 }
 
+// printStep prints a "[step/total] msg" progress line, e.g. "[2/3] Uploading...".
 func printStep(step, total int, msg string) {
 	fmt.Printf("\n  [%d/%d] %s\n", step, total, msg)
 }
 
+// printSuccess prints msg prefixed with a green checkmark.
 func printSuccess(msg string) {
 	checkMark := lipgloss.NewStyle().Foreground(lipgloss.Color("#00FF00")).Render("✓")
 	fmt.Printf("  %s %s\n", checkMark, msg)
