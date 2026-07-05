@@ -223,7 +223,13 @@ func RunPush(plan *PushPlan) error {
 		return nil
 	}
 	tokenMgr := proxy.NewTokenManager(registry, repository, "")
-	_, configAnnotations, _ := proxy.BootstrapConfigWithAnnotations(ctx, nil, registry, repository, tokenMgr)
+	if ociToken != "" {
+		tokenMgr.SetOverrideToken(ociToken)
+	}
+	_, configAnnotations, err := proxy.BootstrapConfigWithAnnotations(ctx, nil, registry, repository, tokenMgr)
+	if err != nil {
+		fmt.Printf("WARNING: failed to fetch config annotations: %v\n", err)
+	}
 
 	isNative := false
 	if configAnnotations != nil {
@@ -433,6 +439,7 @@ func RunPush(plan *PushPlan) error {
 				receipts = append(receipts, network.PushReceipt{
 					StorePath:   r.StorePath,
 					NarinfoPath: r.NarinfoPath,
+					NarPath:     r.NarPath,
 					NarDigest:   narDigest,
 					NarSize:     narStat.Size(),
 					IsRoot:      isRoot,

@@ -45,6 +45,7 @@ type PushCacheEntry struct {
 type PushReceipt struct {
 	StorePath   string
 	NarinfoPath string
+	NarPath     string
 	NarDigest   string
 	NarSize     int64
 	IsRoot      bool
