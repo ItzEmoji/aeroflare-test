@@ -50,13 +50,10 @@ func (ci *CacheIndex) IndexType() string {
 	if ci.ManifestAnnotations == nil {
 		return "json"
 	}
-	if t := ci.ManifestAnnotations["aeroflare.index-type"]; t != "" {
-		return t
-	}
 	if t := ci.ManifestAnnotations["aeroflare.backend"]; t != "" {
 		return t
 	}
-	if t := ci.ManifestAnnotations["index-type"]; t != "" {
+	if t := ci.ManifestAnnotations["backend"]; t != "" {
 		return t
 	}
 	if t := ci.ManifestAnnotations["backend"]; t != "" {

@@ -17,8 +17,10 @@ type BackendConfig struct {
 
 func NewCacheBackend(cfg BackendConfig) CacheBackend {
 	backendType := "native"
-	if cfg.ConfigAnnotations != nil && cfg.ConfigAnnotations["aeroflare.index-type"] != "" {
-		backendType = cfg.ConfigAnnotations["aeroflare.index-type"]
+	if cfg.ConfigAnnotations != nil {
+		if t := cfg.ConfigAnnotations["aeroflare.backend"]; t != "" {
+			backendType = t
+		}
 	}
 	if cfg.R2 != nil && cfg.R2.PublicURL != "" {
 		backendType = "r2"

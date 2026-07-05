@@ -20,12 +20,12 @@ func TestNewCacheBackend(t *testing.T) {
 			name: "config annotations set json",
 			cfg: BackendConfig{
 				ConfigAnnotations: map[string]string{
-					"aeroflare.index-type": "json",
+					"aeroflare.backend": "json",
 				},
 			},
 			expected: &JSONBackend{cfg: BackendConfig{
 				ConfigAnnotations: map[string]string{
-					"aeroflare.index-type": "json",
+					"aeroflare.backend": "json",
 				},
 			}},
 		},
@@ -33,7 +33,7 @@ func TestNewCacheBackend(t *testing.T) {
 			name: "r2 config overrides config annotations",
 			cfg: BackendConfig{
 				ConfigAnnotations: map[string]string{
-					"aeroflare.index-type": "json",
+					"aeroflare.backend": "json",
 				},
 				R2: &R2Config{
 					PublicURL: "https://example.com",
@@ -41,7 +41,7 @@ func TestNewCacheBackend(t *testing.T) {
 			},
 			expected: &R2Backend{cfg: BackendConfig{
 				ConfigAnnotations: map[string]string{
-					"aeroflare.index-type": "json",
+					"aeroflare.backend": "json",
 				},
 				R2: &R2Config{
 					PublicURL: "https://example.com",
@@ -52,13 +52,13 @@ func TestNewCacheBackend(t *testing.T) {
 			name: "r2 config without public URL uses config annotations",
 			cfg: BackendConfig{
 				ConfigAnnotations: map[string]string{
-					"aeroflare.index-type": "json",
+					"aeroflare.backend": "json",
 				},
 				R2: &R2Config{},
 			},
 			expected: &JSONBackend{cfg: BackendConfig{
 				ConfigAnnotations: map[string]string{
-					"aeroflare.index-type": "json",
+					"aeroflare.backend": "json",
 				},
 				R2: &R2Config{},
 			}},
@@ -67,12 +67,12 @@ func TestNewCacheBackend(t *testing.T) {
 			name: "unknown annotation falls back to native",
 			cfg: BackendConfig{
 				ConfigAnnotations: map[string]string{
-					"aeroflare.index-type": "unknown",
+					"aeroflare.backend": "unknown",
 				},
 			},
 			expected: &NativeBackend{cfg: BackendConfig{
 				ConfigAnnotations: map[string]string{
-					"aeroflare.index-type": "unknown",
+					"aeroflare.backend": "unknown",
 				},
 			}},
 		},

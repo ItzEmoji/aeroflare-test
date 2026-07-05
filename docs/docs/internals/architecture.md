@@ -79,5 +79,5 @@ type PushReceipt struct {
     *   **Manifest Construction**:
         *   The updated `PushCacheIndex` is marshaled into JSON and pushed as a blob (`application/vnd.nix.cache.index.v1+json`).
         *   An empty configuration JSON blob containing a `created` timestamp is pushed (`application/vnd.oci.image.config.v1+json`).
-        *   An OCI manifest is constructed linking these two digests. It includes annotations such as `aeroflare.index-type` (defaulting to `"json"`, or `"r2"` if an R2 config is provided) and `aeroflare.public-key`.
+        *   An OCI manifest is constructed linking these two digests. It includes annotations such as `aeroflare.backend` (defaulting to `"json"`, or `"r2"` if an R2 config is provided) and `aeroflare.public-key`.
     *   Finally, the assembled manifest is pushed to the registry at the `cache-index` tag using a `PUT` request.

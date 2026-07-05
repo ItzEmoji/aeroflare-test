@@ -249,15 +249,13 @@ func UpdateCacheIndex(receipts []PushReceipt, existingIndex *PushCacheIndex, reg
 		} else if pk := configAnnotations["public-key"]; pk != "" {
 			manifestAnnotations["aeroflare.public-key"] = pk
 		}
-		if backend := configAnnotations["aeroflare.index-type"]; backend != "" {
-			manifestAnnotations["aeroflare.index-type"] = backend
-		} else if backend := configAnnotations["aeroflare.backend"]; backend != "" {
-			manifestAnnotations["aeroflare.index-type"] = backend
+		if backend := configAnnotations["aeroflare.backend"]; backend != "" {
+			manifestAnnotations["aeroflare.backend"] = backend
 		}
 	}
 
-	if manifestAnnotations["aeroflare.index-type"] == "" {
-		manifestAnnotations["aeroflare.index-type"] = "json"
+	if manifestAnnotations["aeroflare.backend"] == "" {
+		manifestAnnotations["aeroflare.backend"] = "json"
 	}
 
 	if len(manifestAnnotations) > 0 {

@@ -34,10 +34,7 @@ var configureCmd = &cobra.Command{
 		tokenMgr := proxy.NewTokenManager(registry, repository, token)
 		remoteConf, existingAnnotations, _ := proxy.BootstrapConfigWithAnnotations(context.Background(), nil, registry, repository, tokenMgr)
 		if existingAnnotations != nil {
-			b := existingAnnotations["aeroflare.index-type"]
-			if b == "" {
-				b = existingAnnotations["aeroflare.backend"]
-			}
+			b := existingAnnotations["aeroflare.backend"]
 			if b != "" {
 				switch b {
 				case "r2":
@@ -77,7 +74,7 @@ var configureCmd = &cobra.Command{
 		form := huh.NewForm(
 			huh.NewGroup(
 				huh.NewSelect[string]().
-					Title("Choose your cache backend (index-type)").
+					Title("Choose your cache backend").
 					Options(
 						huh.NewOption("Cloudflare R2 (Recommended)", "r2"),
 						huh.NewOption("Native OCI Tags (Experimental)", "native"),
@@ -131,7 +128,7 @@ var configureCmd = &cobra.Command{
 		}
 
 		annotations := map[string]string{
-			"aeroflare.index-type": backend,
+			"aeroflare.backend": backend,
 			"aeroflare.public-key": publicKey,
 		}
 

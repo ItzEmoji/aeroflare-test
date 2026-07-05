@@ -31,7 +31,7 @@ Crucially, before invoking the provisioner, `init.go` dynamically mutates the pr
 The `configure` command reads and writes cache backend configuration directly to OCI manifest annotations using `network.PushConfigManifest`.
 
 It manipulates the following specific OCI annotation keys:
-- `aeroflare.index-type`: The storage backend (`r2`, `native`, or `json`).
+- `aeroflare.backend`: The storage backend (`r2`, `native`, or `json`).
 - `aeroflare.public-key`: The nix cache public key.
 - `aeroflare.r2.bucket`: The R2 bucket name.
 - `public-r2-url`: The R2 public URL (e.g., `https://pub-xxx.r2.dev`).
