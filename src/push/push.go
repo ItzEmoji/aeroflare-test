@@ -21,7 +21,6 @@ import (
 	"aeroflare/src/proxy"
 	"aeroflare/src/ui"
 
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"golang.org/x/sync/errgroup"
@@ -225,23 +224,8 @@ func RunPush(plan *PushPlan) error {
 	tokenMgr := proxy.NewTokenManager(registry, repository, "")
 	_, configAnnotations, _ := proxy.BootstrapConfigWithAnnotations(ctx, nil, registry, repository, tokenMgr)
 
-	isNative := false
-	if configAnnotations != nil {
-		if backend := configAnnotations["aeroflare.index-type"]; backend == "native" {
-			isNative = true
-		} else if backend := configAnnotations["aeroflare.backend"]; backend == "native" {
-			isNative = true
-		}
-	}
-
 	r2Cfg := network.GetR2Config(configAnnotations)
-	var s3Client *s3.Client
 	if r2Cfg != nil {
-		var initErr error
-		s3Client, initErr = r2Cfg.NewClient(ctx)
-		if initErr != nil {
-			return fmt.Errorf("failed to init R2 client: %v", initErr)
-		}
 		fmt.Printf("R2 Object Storage enabled (Bucket: %s)\n", r2Cfg.Bucket)
 	}
 
@@ -366,59 +350,16 @@ func RunPush(plan *PushPlan) error {
 					}
 				}
 
-				if isNative {
-					// Dual-Strategy: Push natively to OCI
-					basename := filepath.Base(ni.StorePath)
-					tag := strings.SplitN(basename, "-", 2)[0]
-					err = network.PushNarPackage(layer, ni, tag, registry, repository, ociToken)
-					if err != nil {
-						if isRoot {
-							return fmt.Errorf("failed to push OCI Native artifact (%s): %v", r.StorePath, err)
-						} else {
-							mu.Lock()
-							fmt.Printf("ERROR: Failed to push reference OCI Native artifact: %v\n", err)
-							mu.Unlock()
-							return nil
-						}
-					}
-				}
-
-				// Strategy 2 Legacy Fallback (the layer was already pushed by PushNarPackage, but we call PushLayer to be perfectly safe, which is a fast no-op if the layer exists)
+				// Simply push the layer and collect receipt.
 				err = network.PushLayer(layer, registry, repository, ociToken)
 				if err != nil {
 					if isRoot {
-						return fmt.Errorf("failed to push fallback NAR layer (%s): %v", r.NarPath, err)
+						return fmt.Errorf("failed to push NAR layer (%s): %v", r.NarPath, err)
 					} else {
 						mu.Lock()
-						fmt.Printf("ERROR: Failed to push reference fallback NAR layer: %v\n", err)
+						fmt.Printf("ERROR: Failed to push reference NAR layer: %v\n", err)
 						mu.Unlock()
 						return nil
-					}
-				}
-
-				if r2Cfg != nil && s3Client != nil {
-					err = r2Cfg.UploadNarinfo(egCtx, s3Client, r.StorePath, r.NarinfoPath)
-					if err != nil {
-						if isRoot {
-							return fmt.Errorf("failed to upload Narinfo file to R2 (%s): %v", r.NarinfoPath, err)
-						} else {
-							mu.Lock()
-							fmt.Printf("ERROR: Failed to upload reference Narinfo to R2: %v\n", err)
-							mu.Unlock()
-							return nil
-						}
-					}
-				} else {
-					_, err = network.PushBlob(r.NarinfoPath, registry, repository, ociToken)
-					if err != nil {
-						if isRoot {
-							return fmt.Errorf("failed to upload Narinfo file (%s): %v", r.NarinfoPath, err)
-						} else {
-							mu.Lock()
-							fmt.Printf("ERROR: Failed to upload reference Narinfo: %v\n", err)
-							mu.Unlock()
-							return nil
-						}
 					}
 				}
 
@@ -451,11 +392,20 @@ func RunPush(plan *PushPlan) error {
 		}
 	}
 
-	printStep(3, 3, "Updating cache index...")
-	if err := network.UpdateCacheIndex(receipts, existingIndex, registry, repository, ociToken, plan.Config.SigningKey, r2Cfg, configAnnotations); err != nil {
-		return fmt.Errorf("failed to update cache index: %v", err)
+	printStep(3, 3, "Updating cache backend...")
+	backend := network.NewCacheBackend(network.BackendConfig{
+		Registry:          registry,
+		Repository:        repository,
+		Token:             ociToken,
+		PubKeyPath:        plan.Config.SigningKey,
+		ConfigAnnotations: configAnnotations,
+		R2:                r2Cfg,
+	})
+
+	if err := backend.PushReceipts(ctx, receipts); err != nil {
+		return fmt.Errorf("backend push failed: %v", err)
 	}
-	printSuccess("Cache index updated")
+	printSuccess("Cache backend updated")
 
 	duration := time.Since(startTime)
 
