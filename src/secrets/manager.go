@@ -1,3 +1,9 @@
+// Package secrets stores and retrieves credentials (GitHub/GitLab/OCI
+// tokens) using the OS keychain via go-keyring as the primary backend. If
+// the keychain is unavailable (e.g. headless CI, no D-Bus secret service),
+// it transparently falls back to a plain-text JSON file under the user's
+// config directory, so aeroflare keeps working in restricted environments
+// at the cost of weaker credential protection.
 package secrets
 
 import (
@@ -10,8 +16,12 @@ import (
 	"github.com/zalando/go-keyring"
 )
 
+// ErrNotFound is returned by Manager.Get when the requested key does not
+// exist in either the keychain or the fallback file.
 var ErrNotFound = keyring.ErrNotFound
 
+// Manager stores and retrieves named secrets. Implementations may back onto
+// the OS keychain, a file, or (in tests) an in-memory map.
 type Manager interface {
 	Set(key, value string) error
 	Get(key string) (string, error)
@@ -19,14 +29,21 @@ type Manager interface {
 	Delete(key string) error
 }
 
+// defaultManager is the production Manager: it prefers the OS keychain,
+// identified by serviceName, and falls back to a JSON file when the
+// keychain is unavailable.
 type defaultManager struct {
 	serviceName string
 }
 
+// NewManager returns the default Manager, scoped to aeroflare's own
+// keychain service name so its secrets don't collide with other apps'.
 func NewManager() Manager {
 	return &defaultManager{serviceName: "aeroflare"}
 }
 
+// getConfigDir returns aeroflare's config directory: $XDG_CONFIG_HOME/aeroflare
+// if set, otherwise ~/.config/aeroflare.
 func getConfigDir() string {
 	configDir := os.Getenv("XDG_CONFIG_HOME")
 	if configDir == "" {
@@ -38,10 +55,19 @@ func getConfigDir() string {
 	return filepath.Join(configDir, "aeroflare")
 }
 
+// getFallbackFile returns the path to the plain-text JSON file used when
+// the OS keychain is unavailable.
 func getFallbackFile() string {
 	return filepath.Join(getConfigDir(), "secrets.json")
 }
 
+// updateIndex maintains the "_keys_index" pseudo-entry: a comma-separated
+// list of all keys ever Set, stored via the same Get/Set path as any other
+// secret. The OS keychain has no "list all keys" API, so List() depends on
+// this index to enumerate keychain-backed secrets (in addition to whatever
+// it finds in the fallback JSON file, which can list its own keys
+// directly). The index entry itself is excluded from indexing to avoid
+// infinite recursion.
 func (m *defaultManager) updateIndex(key string, remove bool) {
 	if key == "_keys_index" {
 		return
@@ -55,7 +81,7 @@ func (m *defaultManager) updateIndex(key string, remove bool) {
 			}
 		}
 	}
-	
+
 	changed := false
 	if remove {
 		if keys[key] {
@@ -68,7 +94,7 @@ func (m *defaultManager) updateIndex(key string, remove bool) {
 			changed = true
 		}
 	}
-	
+
 	if changed {
 		var newKeys []string
 		for k := range keys {
@@ -78,6 +104,11 @@ func (m *defaultManager) updateIndex(key string, remove bool) {
 	}
 }
 
+// Set stores value under key in the OS keychain. If the keychain is
+// unavailable, it falls back to writing (or updating) the plain-text JSON
+// file, using a write-to-temp-then-rename to avoid corrupting the file on a
+// crash mid-write. Either way, the key is recorded in the "_keys_index" so
+// List can find it later.
 func (m *defaultManager) Set(key, value string) error {
 	err := keyring.Set(m.serviceName, key, value)
 	if err == nil {
@@ -87,34 +118,34 @@ func (m *defaultManager) Set(key, value string) error {
 		m.updateIndex(key, false)
 		return nil
 	}
-	
+
 	if key != "_keys_index" {
 		fmt.Printf("⚠️ Warning: Keychain not available. Secret '%s' written in plain text to fallback file.\n", key)
 	}
 
-	// Fallback
+	// Fall back to the plain-text JSON file.
 	dir := getConfigDir()
 	_ = os.MkdirAll(dir, 0755)
-	
+
 	file := getFallbackFile()
-	secrets := make(map[string]string)
-	
+	stored := make(map[string]string)
+
 	data, err := os.ReadFile(file)
 	if err == nil {
 		if len(data) > 0 {
-			if err := json.Unmarshal(data, &secrets); err != nil {
+			if err := json.Unmarshal(data, &stored); err != nil {
 				return err
 			}
 		}
 	}
-	
-	secrets[key] = value
-	
-	out, err := json.MarshalIndent(secrets, "", "  ")
+
+	stored[key] = value
+
+	out, err := json.MarshalIndent(stored, "", "  ")
 	if err != nil {
 		return err
 	}
-	
+
 	tmpFile := file + ".tmp"
 	if err := os.WriteFile(tmpFile, out, 0600); err != nil {
 		return err
@@ -126,31 +157,39 @@ func (m *defaultManager) Set(key, value string) error {
 	return err
 }
 
+// Get retrieves the value for key from the OS keychain, falling back to the
+// plain-text JSON file if the keychain lookup fails (e.g. because the
+// keychain is unavailable, or the key was written there by Set's fallback
+// path). Returns ErrNotFound if key is present in neither.
 func (m *defaultManager) Get(key string) (string, error) {
 	val, err := keyring.Get(m.serviceName, key)
 	if err == nil {
 		return val, nil
 	}
-	
-	// Fallback
+
+	// Fall back to the plain-text JSON file.
 	file := getFallbackFile()
 	data, err := os.ReadFile(file)
 	if err != nil {
 		return "", err
 	}
-	
-	secrets := make(map[string]string)
-	if err := json.Unmarshal(data, &secrets); err != nil {
+
+	stored := make(map[string]string)
+	if err := json.Unmarshal(data, &stored); err != nil {
 		return "", err
 	}
-	
-	if v, ok := secrets[key]; ok {
+
+	if v, ok := stored[key]; ok {
 		return v, nil
 	}
-	
+
 	return "", keyring.ErrNotFound
 }
 
+// List returns all known secret keys, merging the "_keys_index" (which
+// tracks keychain-backed keys, since the keychain has no native listing
+// API) with whatever keys are present in the fallback JSON file. The
+// internal "_keys_index" entry itself is never included in the result.
 func (m *defaultManager) List() ([]string, error) {
 	keySet := make(map[string]bool)
 
@@ -163,13 +202,13 @@ func (m *defaultManager) List() ([]string, error) {
 		}
 	}
 
-	// Merge keys from fallback JSON
+	// Merge keys from the fallback JSON file.
 	file := getFallbackFile()
 	data, err := os.ReadFile(file)
 	if err == nil {
-		secrets := make(map[string]string)
-		if json.Unmarshal(data, &secrets) == nil {
-			for k := range secrets {
+		stored := make(map[string]string)
+		if json.Unmarshal(data, &stored) == nil {
+			for k := range stored {
 				keySet[k] = true
 			}
 		}
@@ -184,20 +223,24 @@ func (m *defaultManager) List() ([]string, error) {
 	return keys, nil
 }
 
+// Delete removes key from both the OS keychain and the fallback JSON file
+// (whichever holds it) and from the "_keys_index". Keychain errors are
+// ignored: the key may simply not exist there (e.g. it was only ever
+// written to the fallback file), which is not treated as a failure.
 func (m *defaultManager) Delete(key string) error {
 	_ = keyring.Delete(m.serviceName, key)
 	// If keyring fails for another reason, we might still want to try fallback.
 	// But usually it's fine.
 
-	// Also try removing from fallback
+	// Also try removing from the fallback JSON file.
 	file := getFallbackFile()
 	data, errFallback := os.ReadFile(file)
 	if errFallback == nil {
-		secrets := make(map[string]string)
-		if json.Unmarshal(data, &secrets) == nil {
-			if _, ok := secrets[key]; ok {
-				delete(secrets, key)
-				out, _ := json.MarshalIndent(secrets, "", "  ")
+		stored := make(map[string]string)
+		if json.Unmarshal(data, &stored) == nil {
+			if _, ok := stored[key]; ok {
+				delete(stored, key)
+				out, _ := json.MarshalIndent(stored, "", "  ")
 				tmpFile := file + ".tmp"
 				_ = os.WriteFile(tmpFile, out, 0600)
 				_ = os.Rename(tmpFile, file)
