@@ -26,6 +26,17 @@ func DisplaySummary(cfg *RunConfig) {
 	})
 }
 
+// buildNixConfig appends the proxy substituter to any existing NIX_CONFIG.
+// It deliberately does NOT set accept-flake-config: that would silently trust
+// substituters and keys defined by arbitrary flakes.
+func buildNixConfig(existing string, port int) string {
+	cfg := existing
+	if cfg != "" {
+		cfg += "\n"
+	}
+	return cfg + fmt.Sprintf("extra-substituters = http://127.0.0.1:%d", port)
+}
+
 // ExecuteCommand starts proxy, runs cmd, and returns harvested store paths
 func ExecuteCommand(cfg *RunConfig, registry, repository, indexDir, githubToken string) ([]string, error) {
 	if len(cfg.Command) == 0 {
@@ -53,12 +64,7 @@ func ExecuteCommand(cfg *RunConfig, registry, repository, indexDir, githubToken 
 	cmdToRun.Stdin = os.Stdin
 
 	env := os.Environ()
-	nixConfig := os.Getenv("NIX_CONFIG")
-	if nixConfig != "" {
-		nixConfig += "\n"
-	}
-	nixConfig += fmt.Sprintf("extra-substituters = http://127.0.0.1:%d\naccept-flake-config = true", port)
-	env = append(env, "NIX_CONFIG="+nixConfig)
+	env = append(env, "NIX_CONFIG="+buildNixConfig(os.Getenv("NIX_CONFIG"), port))
 	cmdToRun.Env = env
 
 	err = cmdToRun.Run()

@@ -50,14 +50,12 @@ func (ci *CacheIndex) IndexType() string {
 	if ci.ManifestAnnotations == nil {
 		return "json"
 	}
-	if t := ci.ManifestAnnotations["aeroflare.backend"]; t != "" {
-		return t
-	}
-	if t := ci.ManifestAnnotations["backend"]; t != "" {
-		return t
-	}
-	if t := ci.ManifestAnnotations["backend"]; t != "" {
-		return t
+	// Current keys first, then the pre-migration "index-type" keys so caches
+	// written by older versions keep working.
+	for _, key := range []string{"aeroflare.backend", "backend", "aeroflare.index-type", "index-type"} {
+		if t := ci.ManifestAnnotations[key]; t != "" {
+			return t
+		}
 	}
 	return "json"
 }
@@ -80,14 +78,20 @@ func (ci *CacheIndex) PublicR2URL() string {
 	return ci.ManifestAnnotations["aeroflare.r2.public_url"]
 }
 
+// indexRefreshFailureCooldown limits how often a failed initial load is
+// retried, so an unreachable registry doesn't serialize every request behind
+// a synchronous refresh attempt.
+var indexRefreshFailureCooldown = 10 * time.Second
+
 // Get returns the current cache index data and NAR lookups map, triggering a TTL-based refresh if needed.
 func (ci *CacheIndex) Get(ctx context.Context) (*CacheIndexData, map[string]string) {
 	ci.mu.RLock()
 	needRefresh := time.Since(ci.LastFetch) > ci.IndexTTL
 	isNil := ci.Data == nil && ci.ManifestAnnotations == nil
+	inFailureCooldown := !ci.LastFetch.IsZero() && time.Since(ci.LastFetch) <= indexRefreshFailureCooldown
 	ci.mu.RUnlock()
 
-	if isNil {
+	if isNil && !inFailureCooldown {
 		ci.refreshMu.Lock()
 		ci.mu.RLock()
 		isNil = ci.Data == nil && ci.ManifestAnnotations == nil
@@ -200,7 +204,7 @@ func (ci *CacheIndex) updateInMemory(data *CacheIndexData) {
 }
 
 func (ci *CacheIndex) refresh(ctx context.Context) error {
-	token, err := ci.TokenMgr.GetToken(context.Background())
+	token, err := ci.TokenMgr.GetToken(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get token: %w", err)
 	}
@@ -279,17 +283,18 @@ func (ci *CacheIndex) refresh(ctx context.Context) error {
 
 	// 2. Fetch blob (json mode)
 	blobURL := fmt.Sprintf("%s://%s/v2/%s/blobs/%s", proto, ci.Registry, ci.Repository, digest)
-	req, err := http.NewRequestWithContext(ctx, "GET", blobURL, nil)
-	if err != nil {
-		return fmt.Errorf("failed creating blob request: %w", err)
-	}
-	req.Header.Set("User-Agent", userAgent)
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-
 	blobClient := &http.Client{Timeout: 120 * time.Second}
-	resp, err := blobClient.Do(req)
+	resp, err := network.DoWithRetry(blobClient, func() (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, "GET", blobURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("User-Agent", userAgent)
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		return req, nil
+	})
 	if err != nil {
 		return fmt.Errorf("failed fetching blob from %s: %w", blobURL, err)
 	}

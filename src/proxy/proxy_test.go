@@ -615,16 +615,22 @@ func TestProxyServer_ServeNar_Upstream_Interrupted(t *testing.T) {
 	rPipe, wPipe, _ := os.Pipe()
 	os.Stderr = wPipe
 
-	ps.Handler(w, req)
+	// An interrupted upstream stream must abort the response (via
+	// http.ErrAbortHandler, which net/http suppresses) so the client never
+	// mistakes a truncated body for a complete download.
+	panicked := func() (p interface{}) {
+		defer func() { p = recover() }()
+		ps.Handler(w, req)
+		return nil
+	}()
 
 	_ = wPipe.Close()
 	os.Stderr = oldStderr
 	var stderrOutput bytes.Buffer
 	_, _ = io.Copy(&stderrOutput, rPipe)
 
-	resp := w.Result()
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("Expected 200 for interrupted upstream, got %d", resp.StatusCode)
+	if panicked != http.ErrAbortHandler {
+		t.Errorf("Expected handler to abort with http.ErrAbortHandler, got: %v", panicked)
 	}
 
 	if !strings.Contains(stderrOutput.String(), "Warning: stream interrupted for upstream path") {

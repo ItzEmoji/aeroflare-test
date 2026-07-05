@@ -2,6 +2,7 @@ package network
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -182,6 +183,7 @@ Sig: `
 
 		existingIndexBlob := `{"version":1,"entries":{"00000000000000000000000000000000":{"name":"test0","narinfo":"","nar_size":10,"added":""}}}`
 		blobDigest := "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+		var storedManifest []byte
 
 		mockRegistry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/v2/" {
@@ -192,10 +194,15 @@ Sig: `
 			if r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/v2/test-repo/manifests/cache-index") {
 				mu.Lock()
 				fetchedIndex = true
+				stored := storedManifest
 				mu.Unlock()
 				w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`{"schemaVersion":2,"layers":[{"digest":"` + blobDigest + `"}]}`))
+				if stored != nil {
+					_, _ = w.Write(stored)
+					return
+				}
+				_, _ = w.Write([]byte(`{"schemaVersion":2,"layers":[{"digest":"` + blobDigest + `"}]}`))
 				return
 			}
 
@@ -228,8 +235,10 @@ Sig: `
 			}
 
 			if r.Method == "PUT" && strings.HasPrefix(r.URL.Path, "/v2/test-repo/manifests/cache-index") {
+				body, _ := io.ReadAll(r.Body)
 				mu.Lock()
 				pushedIndex = true
+				storedManifest = body
 				mu.Unlock()
 				w.WriteHeader(http.StatusCreated)
 				return

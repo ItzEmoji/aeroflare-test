@@ -2,6 +2,8 @@ package network
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -51,72 +53,129 @@ type PushReceipt struct {
 	NarDigest   string
 	NarSize     int64
 	NarPath     string
+	Compression string // narinfo Compression value (e.g. "xz", "zstd")
 	IsRoot      bool
 }
 
-// FetchCacheIndex fetches the current cache-index.
+// FetchCacheIndex fetches the current cache-index. A missing index (HTTP 404)
+// yields an empty index; any other failure is returned as an error so callers
+// never mistake an unreachable index for an empty cache.
 func FetchCacheIndex(registry, repository, token string) (*PushCacheIndex, error) {
+	index, _, err := fetchCacheIndexWithDigest(registry, repository, token)
+	return index, err
+}
+
+// fetchCacheIndexWithDigest fetches the cache-index and the digest of its
+// manifest (Docker-Content-Digest). The digest is "" when no index exists yet.
+func fetchCacheIndexWithDigest(registry, repository, token string) (*PushCacheIndex, string, error) {
 	if reg, err := name.NewRegistry(registry); err == nil {
 		registry = reg.RegistryStr()
 	}
-	scheme := "https"
-	if strings.HasPrefix(registry, "localhost:") || strings.HasPrefix(registry, "127.0.0.1:") {
-		scheme = "http"
-	}
+	scheme := GetProtocol(registry)
 	manifestURL := fmt.Sprintf("%s://%s/v2/%s/manifests/cache-index", scheme, registry, repository)
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	req, err := http.NewRequest("GET", manifestURL, nil)
+
+	emptyIndex := func() *PushCacheIndex {
+		return &PushCacheIndex{Entries: make(map[string]PushCacheEntry)}
+	}
+
+	resp, err := DoWithRetry(client, func() (*http.Request, error) {
+		req, err := http.NewRequest("GET", manifestURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Accept", "application/vnd.oci.image.manifest.v1+json")
+		return req, nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("create manifest request: %w", err)
+		return nil, "", fmt.Errorf("fetch cache-index manifest: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/vnd.oci.image.manifest.v1+json")
+	defer func() { _ = resp.Body.Close() }()
 
-	var existingIndex PushCacheIndex
-	existingIndex.Entries = make(map[string]PushCacheEntry)
-
-	resp, err := client.Do(req)
-	if err == nil && resp.StatusCode == http.StatusOK {
-		defer func() { _ = resp.Body.Close() }()
-		var manifest struct {
-			Layers []struct {
-				Digest string `json:"digest"`
-			} `json:"layers"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&manifest); err == nil && len(manifest.Layers) > 0 {
-			tmpIndex, err := os.CreateTemp("", "existing-index-*.json")
-			if err == nil {
-				_ = tmpIndex.Close()
-				defer func() { _ = os.Remove(tmpIndex.Name()) }()
-
-				if err := PullBlob(manifest.Layers[0].Digest, tmpIndex.Name(), registry, repository, token); err == nil {
-					if b, err := os.ReadFile(tmpIndex.Name()); err == nil {
-						_ = json.Unmarshal(b, &existingIndex)
-						if existingIndex.Entries == nil {
-							existingIndex.Entries = make(map[string]PushCacheEntry)
-						}
-					}
-				}
-			}
-		}
-	} else if resp != nil {
-		_ = resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		// No index yet: a fresh cache.
+		return emptyIndex(), "", nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, "", fmt.Errorf("fetch cache-index manifest: HTTP %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	return &existingIndex, nil
+	manifestBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", fmt.Errorf("read cache-index manifest: %w", err)
+	}
+	// Compute the digest from the body rather than trusting a header; the OCI
+	// spec stores manifests byte-exact, so this matches the canonical digest.
+	manifestDigest := manifestSHA256(manifestBytes)
+
+	var manifest struct {
+		Layers []struct {
+			Digest string `json:"digest"`
+		} `json:"layers"`
+	}
+	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+		return nil, "", fmt.Errorf("decode cache-index manifest: %w", err)
+	}
+	if len(manifest.Layers) == 0 {
+		// Manifest exists but carries no index blob; treat as empty.
+		return emptyIndex(), manifestDigest, nil
+	}
+
+	blobURL := fmt.Sprintf("%s://%s/v2/%s/blobs/%s", scheme, registry, repository, manifest.Layers[0].Digest)
+	blobResp, err := DoWithRetry(client, func() (*http.Request, error) {
+		blobReq, err := http.NewRequest("GET", blobURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		blobReq.Header.Set("Authorization", "Bearer "+token)
+		return blobReq, nil
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("fetch cache-index blob: %w", err)
+	}
+	defer func() { _ = blobResp.Body.Close() }()
+	if blobResp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("fetch cache-index blob: HTTP %d", blobResp.StatusCode)
+	}
+
+	blobBytes, err := io.ReadAll(blobResp.Body)
+	if err != nil {
+		return nil, "", fmt.Errorf("read cache-index blob: %w", err)
+	}
+
+	existingIndex := emptyIndex()
+	if err := json.Unmarshal(blobBytes, existingIndex); err != nil {
+		return nil, "", fmt.Errorf("decode cache-index blob: %w", err)
+	}
+	if existingIndex.Entries == nil {
+		existingIndex.Entries = make(map[string]PushCacheEntry)
+	}
+
+	return existingIndex, manifestDigest, nil
+}
+
+func manifestSHA256(b []byte) string {
+	sum := sha256.Sum256(b)
+	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 // UpdateCacheIndex merges new entries into existingIndex and pushes the updated manifest.
 func UpdateCacheIndex(receipts []PushReceipt, existingIndex *PushCacheIndex, registry, repository, token, pubKeyPath string, configAnnotations map[string]string) error {
+	_, err := updateCacheIndexWithDigest(receipts, existingIndex, registry, repository, token, pubKeyPath, configAnnotations)
+	return err
+}
+
+// updateCacheIndexWithDigest does the merge+push and returns the digest of the
+// manifest it wrote, so callers can detect concurrent writers afterwards.
+func updateCacheIndexWithDigest(receipts []PushReceipt, existingIndex *PushCacheIndex, registry, repository, token, pubKeyPath string, configAnnotations map[string]string) (string, error) {
 
 	if reg, err := name.NewRegistry(registry); err == nil {
 		registry = reg.RegistryStr()
 	}
-	scheme := "https"
-	if strings.HasPrefix(registry, "localhost:") || strings.HasPrefix(registry, "127.0.0.1:") {
-		scheme = "http"
-	}
+	scheme := GetProtocol(registry)
 	manifestURL := fmt.Sprintf("%s://%s/v2/%s/manifests/cache-index", scheme, registry, repository)
 
 	// Determine public key
@@ -195,34 +254,29 @@ func UpdateCacheIndex(receipts []PushReceipt, existingIndex *PushCacheIndex, reg
 			return nil
 		})
 	}
-	_ = eg.Wait()
+	if err := eg.Wait(); err != nil {
+		return "", fmt.Errorf("collect index entries: %w", err)
+	}
 
 	sort.Strings(newIndex.GCRoots)
 
 	// Push new index JSON as blob
-	outIndex, _ := os.CreateTemp("", "new-index-*.json")
-	defer func() { _ = os.Remove(outIndex.Name()) }()
-
-	b, _ := json.MarshalIndent(newIndex, "", "  ")
-	_ = os.WriteFile(outIndex.Name(), b, 0644)
-
-	indexDigest, err := PushBlob(outIndex.Name(), registry, repository, token)
+	indexBytes, err := json.MarshalIndent(newIndex, "", "  ")
 	if err != nil {
-		return fmt.Errorf("push cache index blob: %w", err)
+		return "", fmt.Errorf("marshal cache index: %w", err)
 	}
-	indexStat, _ := os.Stat(outIndex.Name())
+
+	indexDigest, err := PushBlobBytes(indexBytes, registry, repository, token)
+	if err != nil {
+		return "", fmt.Errorf("push cache index blob: %w", err)
+	}
 
 	// Push empty config JSON as blob
-	outConfig, _ := os.CreateTemp("", "empty-config-*.json")
-	defer func() { _ = os.Remove(outConfig.Name()) }()
-	configContent := fmt.Sprintf(`{"created":"%s"}`, time.Now().UTC().Format(time.RFC3339Nano))
-	_ = os.WriteFile(outConfig.Name(), []byte(configContent), 0644)
-
-	configDigest, err := PushBlob(outConfig.Name(), registry, repository, token)
+	configBytes := []byte(fmt.Sprintf(`{"created":"%s"}`, time.Now().UTC().Format(time.RFC3339Nano)))
+	configDigest, err := PushBlobBytes(configBytes, registry, repository, token)
 	if err != nil {
-		return fmt.Errorf("push config blob: %w", err)
+		return "", fmt.Errorf("push config blob: %w", err)
 	}
-	configStat, _ := os.Stat(outConfig.Name())
 
 	// Push Cache-Index Manifest
 	manifest := map[string]interface{}{
@@ -231,13 +285,13 @@ func UpdateCacheIndex(receipts []PushReceipt, existingIndex *PushCacheIndex, reg
 		"config": map[string]interface{}{
 			"mediaType": "application/vnd.oci.image.config.v1+json",
 			"digest":    configDigest,
-			"size":      configStat.Size(),
+			"size":      len(configBytes),
 		},
 		"layers": []map[string]interface{}{
 			{
 				"mediaType": "application/vnd.nix.cache.index.v1+json",
 				"digest":    indexDigest,
-				"size":      indexStat.Size(),
+				"size":      len(indexBytes),
 			},
 		},
 	}
@@ -262,27 +316,31 @@ func UpdateCacheIndex(receipts []PushReceipt, existingIndex *PushCacheIndex, reg
 		manifest["annotations"] = manifestAnnotations
 	}
 
-	manifestBytes, _ := json.Marshal(manifest)
-	client := &http.Client{Timeout: 30 * time.Second}
-	putReq, err := http.NewRequest("PUT", manifestURL, bytes.NewReader(manifestBytes))
+	manifestBytes, err := json.Marshal(manifest)
 	if err != nil {
-		return fmt.Errorf("create manifest put request: %w", err)
+		return "", fmt.Errorf("marshal cache-index manifest: %w", err)
 	}
-	putReq.Header.Set("Authorization", "Bearer "+token)
-	putReq.Header.Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
-
-	putResp, err := client.Do(putReq)
+	client := &http.Client{Timeout: 30 * time.Second}
+	putResp, err := DoWithRetry(client, func() (*http.Request, error) {
+		putReq, err := http.NewRequest("PUT", manifestURL, bytes.NewReader(manifestBytes))
+		if err != nil {
+			return nil, err
+		}
+		putReq.Header.Set("Authorization", "Bearer "+token)
+		putReq.Header.Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+		return putReq, nil
+	})
 	if err != nil {
-		return fmt.Errorf("push manifest: %w", err)
+		return "", fmt.Errorf("push manifest: %w", err)
 	}
 	defer func() { _ = putResp.Body.Close() }()
 
 	if putResp.StatusCode != http.StatusCreated && putResp.StatusCode != http.StatusOK {
 		respBytes, _ := io.ReadAll(putResp.Body)
-		return fmt.Errorf("push manifest failed with HTTP %d: %s", putResp.StatusCode, string(respBytes))
+		return "", fmt.Errorf("push manifest failed with HTTP %d: %s", putResp.StatusCode, string(respBytes))
 	}
 
-	return nil
+	return manifestSHA256(manifestBytes), nil
 }
 
 // PushConfigManifest pushes the cache-config manifest with the provided annotations.

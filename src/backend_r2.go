@@ -28,9 +28,13 @@ func (b *R2Backend) PushReceipts(ctx context.Context, receipts []PushReceipt) er
 
 	for _, r := range receipts {
 		r := r
+		mediaType := "application/vnd.aeroflare.nar.v1+zstd"
+		if r.Compression != "" {
+			mediaType = "application/vnd.aeroflare.nar.v1+" + r.Compression
+		}
 		// Add layer reference to prevent orphaning
 		layers = append(layers, map[string]interface{}{
-			"mediaType": "application/vnd.aeroflare.nar.v1+zstd", // or generic
+			"mediaType": mediaType,
 			"digest":    r.NarDigest,
 			"size":      r.NarSize,
 		})
@@ -73,19 +77,20 @@ func (b *R2Backend) PushReceipts(ctx context.Context, receipts []PushReceipt) er
 		protocol := GetProtocol(b.cfg.Registry)
 		manifestURL := fmt.Sprintf("%s://%s/v2/%s/manifests/%s", protocol, b.cfg.Registry, b.cfg.Repository, chunkTag)
 
-		req, err := http.NewRequestWithContext(ctx, "PUT", manifestURL, bytes.NewReader(manifestBytes))
-		if err != nil {
-			return fmt.Errorf("failed to create chunk manifest request: %w", err)
-		}
-
-		req.Header.Set("Authorization", "Bearer "+b.cfg.Token)
-		req.Header.Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
-
-		resp, err := http.DefaultClient.Do(req)
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := DoWithRetry(client, func() (*http.Request, error) {
+			req, err := http.NewRequestWithContext(ctx, "PUT", manifestURL, bytes.NewReader(manifestBytes))
+			if err != nil {
+				return nil, err
+			}
+			req.Header.Set("Authorization", "Bearer "+b.cfg.Token)
+			req.Header.Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+			return req, nil
+		})
 		if err != nil {
 			return fmt.Errorf("failed to push chunk manifest: %w", err)
 		}
-		
+
 		if resp.StatusCode >= 300 {
 			resp.Body.Close()
 			return fmt.Errorf("unexpected status pushing chunk manifest: %s", resp.Status)

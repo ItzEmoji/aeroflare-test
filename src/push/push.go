@@ -229,7 +229,9 @@ func RunPush(plan *PushPlan) error {
 		fmt.Printf("R2 Object Storage enabled (Bucket: %s)\n", r2Cfg.Bucket)
 	}
 
-	var receipts []network.PushReceipt
+	var totalReceipts []network.PushReceipt
+	var failedPaths []string
+	var excludedPaths []string
 
 	chunkSize := 100
 	for i := 0; i < len(filteredPaths); i += chunkSize {
@@ -293,8 +295,16 @@ func RunPush(plan *PushPlan) error {
 		}
 
 		printStep(2, 3, fmt.Sprintf("Uploading %d packages to OCI registry", len(tasks)))
-		
+
+		// Registry bearer tokens are short-lived; refresh per chunk so long
+		// pushes don't fail partway with auth errors.
+		if t := network.GetToken(registry, repository, ""); t != "" {
+			ociToken = t
+		}
+
 		var mu sync.Mutex
+		receiptsByPath := make(map[string]network.PushReceipt)
+		var chunkFailed []string
 		eg, _ := errgroup.WithContext(ctx)
 		eg.SetLimit(plan.Config.Workers)
 
@@ -304,63 +314,42 @@ func RunPush(plan *PushPlan) error {
 				r := t.r
 				isRoot := t.isRoot
 
+				fail := func(stage string, err error) {
+					mu.Lock()
+					fmt.Printf("ERROR: %s (%s): %v\n", stage, r.StorePath, err)
+					chunkFailed = append(chunkFailed, r.StorePath)
+					mu.Unlock()
+				}
+
 				narStat, err := os.Stat(r.NarPath)
 				if err != nil {
-					if isRoot {
-						return fmt.Errorf("failed to stat NAR file (%s): %v", r.NarPath, err)
-					}
-					mu.Lock()
-					fmt.Printf("ERROR: Failed to stat reference NAR file (%s): %v\n", r.NarPath, err)
-					mu.Unlock()
+					fail("failed to stat NAR file", err)
 					return nil
 				}
 
 				// Parse narinfo once to avoid disk reads for hashing
 				narinfoData, err := os.ReadFile(r.NarinfoPath)
 				if err != nil {
-					if isRoot {
-						return fmt.Errorf("failed to read narinfo (%s): %v", r.NarinfoPath, err)
-					}
-					mu.Lock()
-					fmt.Printf("ERROR: Failed to read reference narinfo (%s): %v\n", r.NarinfoPath, err)
-					mu.Unlock()
+					fail("failed to read narinfo", err)
 					return nil
 				}
 				ni, err := narinfo.Parse(string(narinfoData))
 				if err != nil {
-					if isRoot {
-						return fmt.Errorf("failed to parse narinfo (%s): %v", r.NarinfoPath, err)
-					}
-					mu.Lock()
-					fmt.Printf("ERROR: Failed to parse reference narinfo (%s): %v\n", r.NarinfoPath, err)
-					mu.Unlock()
+					fail("failed to parse narinfo", err)
 					return nil
 				}
 
 				// Create the layer ONCE for brutal speed without even hashing the file!
 				layer, narDigest, err := network.NewLayerFast(r.NarPath, types.MediaType("application/vnd.aeroflare.nar.v1+"+ni.Compression), ni)
 				if err != nil {
-					if isRoot {
-						return fmt.Errorf("failed to create NAR layer (%s): %v", r.NarPath, err)
-					} else {
-						mu.Lock()
-						fmt.Printf("ERROR: Failed to create reference NAR layer: %v\n", err)
-						mu.Unlock()
-						return nil
-					}
+					fail("failed to create NAR layer", err)
+					return nil
 				}
 
 				// Simply push the layer and collect receipt.
-				err = network.PushLayer(layer, registry, repository, ociToken)
-				if err != nil {
-					if isRoot {
-						return fmt.Errorf("failed to push NAR layer (%s): %v", r.NarPath, err)
-					} else {
-						mu.Lock()
-						fmt.Printf("ERROR: Failed to push reference NAR layer: %v\n", err)
-						mu.Unlock()
-						return nil
-					}
+				if err := network.PushLayer(layer, registry, repository, ociToken); err != nil {
+					fail("failed to push NAR layer", err)
+					return nil
 				}
 
 				pkgName := filepath.Base(r.StorePath)
@@ -371,14 +360,15 @@ func RunPush(plan *PushPlan) error {
 					printSuccess(pkgName)
 				}
 
-				receipts = append(receipts, network.PushReceipt{
+				receiptsByPath[r.StorePath] = network.PushReceipt{
 					StorePath:   r.StorePath,
 					NarinfoPath: r.NarinfoPath,
 					NarDigest:   narDigest,
 					NarSize:     narStat.Size(),
 					NarPath:     r.NarPath,
+					Compression: ni.Compression,
 					IsRoot:      isRoot,
-				})
+				}
 				mu.Unlock()
 
 				return nil
@@ -388,30 +378,44 @@ func RunPush(plan *PushPlan) error {
 			return err
 		}
 
+		failedPaths = append(failedPaths, chunkFailed...)
+		if len(chunkFailed) == len(tasks) && len(tasks) > 0 {
+			return fmt.Errorf("all %d uploads in chunk %d/%d failed (first: %s); aborting push", len(tasks), currentChunk, numChunks, chunkFailed[0])
+		}
+
+		// Only index store paths whose full closure was uploaded; a narinfo
+		// referencing missing paths would break substitution for consumers.
+		chunkReceipts, chunkExcluded := completeReceipts(results, receiptsByPath)
+		excludedPaths = append(excludedPaths, chunkExcluded...)
+
 		if plan.Config.Verbosity < 1 {
-			printSuccess(fmt.Sprintf("%d packages uploaded", len(tasks)))
+			printSuccess(fmt.Sprintf("%d packages uploaded", len(chunkReceipts)))
+		}
+
+		// Flush receipts per chunk so an interrupted push keeps what it
+		// already uploaded instead of orphaning every blob.
+		if len(chunkReceipts) > 0 {
+			backend := network.NewCacheBackend(network.BackendConfig{
+				Registry:          registry,
+				Repository:        repository,
+				Token:             ociToken,
+				PubKeyPath:        plan.Config.SigningKey,
+				ConfigAnnotations: configAnnotations,
+				R2:                r2Cfg,
+			})
+			if err := backend.PushReceipts(ctx, chunkReceipts); err != nil {
+				return fmt.Errorf("backend push failed: %v", err)
+			}
+			totalReceipts = append(totalReceipts, chunkReceipts...)
 		}
 	}
 
-	printStep(3, 3, "Updating cache backend...")
-	backend := network.NewCacheBackend(network.BackendConfig{
-		Registry:          registry,
-		Repository:        repository,
-		Token:             ociToken,
-		PubKeyPath:        plan.Config.SigningKey,
-		ConfigAnnotations: configAnnotations,
-		R2:                r2Cfg,
-	})
-
-	if err := backend.PushReceipts(ctx, receipts); err != nil {
-		return fmt.Errorf("backend push failed: %v", err)
-	}
-	printSuccess("Cache backend updated")
+	printStep(3, 3, "Cache backend updated")
 
 	duration := time.Since(startTime)
 
 	rootsUploaded := 0
-	for _, r := range receipts {
+	for _, r := range totalReceipts {
 		if r.IsRoot {
 			rootsUploaded++
 		}
@@ -422,6 +426,10 @@ func RunPush(plan *PushPlan) error {
 		{Label: "GC roots", Value: strconv.Itoa(rootsUploaded)},
 		{Label: "Duration", Value: duration.Round(time.Millisecond).String()},
 	})
+
+	if len(failedPaths) > 0 {
+		return fmt.Errorf("%d upload(s) failed (%d dependent path(s) left unindexed to keep closures complete); re-run push to retry", len(failedPaths), len(excludedPaths))
+	}
 
 	return nil
 }

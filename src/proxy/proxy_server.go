@@ -551,6 +551,10 @@ func (ps *ProxyServer) streamBlob(ctx context.Context, w http.ResponseWriter, di
 	_, err = io.Copy(w, resp.Body)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[aeroflare proxy] Warning: stream interrupted for blob %s: %v\n", digest, err)
+		// Abort the connection so the client sees a transfer error; returning
+		// normally would cleanly terminate a truncated body, making it look
+		// like a complete download.
+		panic(http.ErrAbortHandler)
 	}
 	return nil
 }
@@ -589,8 +593,12 @@ func (ps *ProxyServer) proxyUpstream(w http.ResponseWriter, r *http.Request, ups
 		}
 		w.WriteHeader(resp.StatusCode)
 		_, err = io.Copy(w, resp.Body)
-		if err != nil && !errors.Is(err, context.Canceled) {
-			fmt.Fprintf(os.Stderr, "[aeroflare proxy] Warning: stream interrupted for upstream path %s: %v\n", upstreamPath, err)
+		if err != nil {
+			if !errors.Is(err, context.Canceled) {
+				fmt.Fprintf(os.Stderr, "[aeroflare proxy] Warning: stream interrupted for upstream path %s: %v\n", upstreamPath, err)
+			}
+			// Abort instead of cleanly terminating a truncated body.
+			panic(http.ErrAbortHandler)
 		}
 		return true
 	}

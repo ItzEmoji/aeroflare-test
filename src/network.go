@@ -16,6 +16,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/static"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"strconv"
 	"strings"
@@ -160,6 +161,19 @@ func PushBlob(filePath, registry, repository, token string) (string, error) {
 	}
 
 	return digestStr, nil
+}
+
+// PushBlobBytes pushes an in-memory blob to the OCI registry and returns its digest.
+func PushBlobBytes(data []byte, registry, repository, token string) (string, error) {
+	layer := static.NewLayer(data, types.MediaType("application/octet-stream"))
+	digest, err := layer.Digest()
+	if err != nil {
+		return "", err
+	}
+	if err := PushLayer(layer, registry, repository, token); err != nil {
+		return "", err
+	}
+	return digest.String(), nil
 }
 
 // PushLayer pushes an existing v1.Layer to the OCI registry.
@@ -411,7 +425,16 @@ func DeleteTag(tag, registry, repository, token string) error {
 
 // GetProtocol determines http vs https protocol (useful for local mock registry tests)
 func GetProtocol(registry string) string {
-	if strings.HasPrefix(registry, "127.0.0.1") || strings.HasPrefix(registry, "localhost") {
+	host := registry
+	if h, _, err := net.SplitHostPort(registry); err == nil {
+		host = h
+	} else {
+		host = strings.Trim(host, "[]") // bare IPv6 literal without port
+	}
+	if host == "localhost" {
+		return "http"
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
 		return "http"
 	}
 	return "https"

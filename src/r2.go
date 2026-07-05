@@ -59,6 +59,12 @@ func GetR2Config(annotations map[string]string) *R2Config {
 }
 
 func (r *R2Config) NewClient(ctx context.Context) (*s3.Client, error) {
+	if r.AccessKey == "" || r.SecretKey == "" {
+		return nil, fmt.Errorf("R2 credentials missing: set R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY")
+	}
+	if r.Endpoint == "" {
+		return nil, fmt.Errorf("R2 endpoint missing: set R2_ENDPOINT or the aeroflare.r2.endpoint annotation")
+	}
 	cfg, err := config.LoadDefaultConfig(ctx,
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(r.AccessKey, r.SecretKey, "")),
 		config.WithRegion("auto"),

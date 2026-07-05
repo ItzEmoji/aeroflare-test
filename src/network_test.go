@@ -27,6 +27,10 @@ func TestGetProtocol(t *testing.T) {
 		{"ghcr.io", "https"},
 		{"registry.hub.docker.com", "https"},
 		{"my.private.registry", "https"},
+		{"[::1]:5000", "http"},
+		{"[::1]", "http"},
+		// A hostname merely starting with "localhost" is NOT local.
+		{"localhost.example.com", "https"},
 	}
 
 	for _, tc := range cases {
