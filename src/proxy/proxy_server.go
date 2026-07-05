@@ -10,6 +10,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	network "aeroflare/src"
 )
 
 // ProxyServer bridges the Nix binary cache protocol to GHCR and upstream caches.
@@ -275,7 +277,7 @@ func (ps *ProxyServer) serveNar(w http.ResponseWriter, r *http.Request, path str
 }
 
 func (ps *ProxyServer) serveNativeNarinfo(w http.ResponseWriter, r *http.Request, storeHash string) error {
-	proto := GetProtocol(ps.Registry)
+	proto := network.GetProtocol(ps.Registry)
 	manifestURL := fmt.Sprintf("%s://%s/v2/%s/manifests/%s", proto, ps.Registry, ps.Repository, storeHash)
 	req, err := http.NewRequestWithContext(r.Context(), "GET", manifestURL, nil)
 	if err != nil {
@@ -368,7 +370,7 @@ func (ps *ProxyServer) digestFromNativeManifest(ctx context.Context, narBasename
 		tag = tag[:idx]
 	}
 
-	proto := GetProtocol(ps.Registry)
+	proto := network.GetProtocol(ps.Registry)
 	manifestURL := fmt.Sprintf("%s://%s/v2/%s/manifests/%s", proto, ps.Registry, ps.Repository, tag)
 	req, err := http.NewRequestWithContext(ctx, "GET", manifestURL, nil)
 	if err != nil {
@@ -405,7 +407,7 @@ func (ps *ProxyServer) digestFromNativeManifest(ctx context.Context, narBasename
 }
 
 func (ps *ProxyServer) fetchConfigLabels(ctx context.Context, configDigest string) (map[string]string, error) {
-	proto := GetProtocol(ps.Registry)
+	proto := network.GetProtocol(ps.Registry)
 	url := fmt.Sprintf("%s://%s/v2/%s/blobs/%s", proto, ps.Registry, ps.Repository, configDigest)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -506,7 +508,7 @@ func (ps *ProxyServer) streamBlob(ctx context.Context, w http.ResponseWriter, di
 		return err
 	}
 
-	proto := GetProtocol(ps.Registry)
+	proto := network.GetProtocol(ps.Registry)
 	url := fmt.Sprintf("%s://%s/v2/%s/blobs/%s", proto, ps.Registry, ps.Repository, digest)
 	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {

@@ -6,12 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"context"
+	"net/http"
 
-	"github.com/google/go-containerregistry/pkg/authn"
-	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"aeroflare/src/proxy"
 )
 
 type withArtifactType struct {
@@ -83,33 +81,39 @@ func ParseAeroflareMetadata(content string) (map[string]string, error) {
 	return annotations, nil
 }
 
-func FetchAeroflareAnnotations(registry, repository, tag, token string) (map[string]string, error) {
-	opts := []name.Option{}
-	if proxy.GetProtocol(registry) == "http" {
-		opts = append(opts, name.Insecure)
+func FetchAeroflareAnnotations(ctx context.Context, client *http.Client, registry, repository, tag, token string) (map[string]string, error) {
+	if client == nil {
+		client = http.DefaultClient
 	}
 
-	refStr := fmt.Sprintf("%s/%s:%s", registry, repository, tag)
-	ref, err := name.ParseReference(refStr, opts...)
+	proto := GetProtocol(registry)
+	manifestURL := fmt.Sprintf("%s://%s/v2/%s/manifests/%s", proto, registry, repository, tag)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", manifestURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse reference: %w", err)
+		return nil, fmt.Errorf("failed creating manifest request: %w", err)
 	}
-
-	remoteOpts := []remote.Option{
-		remote.WithTransport(optimizedTransport),
-	}
+	
+	req.Header.Set("Accept", "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json")
 	if token != "" {
-		remoteOpts = append(remoteOpts, remote.WithAuth(&authn.Bearer{Token: token}))
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	img, err := remote.Image(ref, remoteOpts...)
+	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch image: %w", err)
+		return nil, fmt.Errorf("failed fetching manifest from %s: %w", manifestURL, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("manifest HTTP %d for %s", resp.StatusCode, manifestURL)
 	}
 
-	manifest, err := img.Manifest()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read manifest: %w", err)
+	var manifest struct {
+		Annotations map[string]string `json:"annotations"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&manifest); err != nil {
+		return nil, fmt.Errorf("failed decoding manifest JSON: %w", err)
 	}
 
 	result := make(map[string]string)

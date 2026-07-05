@@ -8,13 +8,6 @@ import (
 	narhash "aeroflare/src/prepare/hash"
 )
 
-// GetProtocol determines http vs https protocol (useful for local mock registry tests)
-func GetProtocol(registry string) string {
-	if strings.HasPrefix(registry, "127.0.0.1") || strings.HasPrefix(registry, "localhost") {
-		return "http"
-	}
-	return "https"
-}
 
 // fileHashToBlobDigest extracts the "FileHash: sha256:<nix-base32>" line from a
 // narinfo and returns the equivalent GHCR blob digest "sha256:<hex>".

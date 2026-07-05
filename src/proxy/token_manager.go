@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	network "aeroflare/src"
 	"github.com/google/go-containerregistry/pkg/name"
 )
 
@@ -75,7 +76,7 @@ func (tm *TokenManager) GetToken(ctx context.Context) (string, error) {
 
 func (tm *TokenManager) fetchToken(ctx context.Context) (string, error) {
 	scope := fmt.Sprintf("repository:%s:pull", tm.repository)
-	proto := GetProtocol(tm.registry)
+	proto := network.GetProtocol(tm.registry)
 	tokenURL := fmt.Sprintf("%s://%s/token?scope=%s&service=%s", proto, tm.registry, scope, tm.registry)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", tokenURL, nil)

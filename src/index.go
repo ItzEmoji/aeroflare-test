@@ -12,8 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"aeroflare/src/proxy"
-
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -280,7 +278,7 @@ func UpdateCacheIndex(receipts []PushReceipt, existingIndex *PushCacheIndex, reg
 // PushConfigManifest pushes the cache-config manifest with the provided annotations.
 func PushConfigManifest(registry, repository, token string, annotations map[string]string) error {
 	opts := []name.Option{}
-	if proxy.GetProtocol(registry) == "http" {
+	if GetProtocol(registry) == "http" {
 		opts = append(opts, name.Insecure)
 	}
 

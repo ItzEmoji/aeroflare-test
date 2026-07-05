@@ -12,9 +12,8 @@ import (
 	"time"
 
 	"github.com/spf13/viper"
-	"aeroflare/src/proxy"
-	"aeroflare/src/auth"
 	"github.com/google/go-containerregistry/pkg/name"
+	"aeroflare/src/auth"
 )
 
 // ExchangeToken performs a token exchange for a given OCI registry.
@@ -25,7 +24,7 @@ func ExchangeToken(registry, repository, username, basicAuthToken string) (strin
 		registry = reg.RegistryStr()
 	}
 
-	proto := proxy.GetProtocol(registry)
+	proto := GetProtocol(registry)
 
 	// Discover realm and service via /v2/ endpoint
 	realm := fmt.Sprintf("%s://%s/token", proto, registry)

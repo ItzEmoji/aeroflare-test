@@ -9,8 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"aeroflare/src/proxy"
-
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -32,7 +30,7 @@ func TestGetProtocol(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		got := proxy.GetProtocol(tc.registry)
+		got := GetProtocol(tc.registry)
 		if got != tc.expected {
 			t.Errorf("GetProtocol(%q) = %q, want %q", tc.registry, got, tc.expected)
 		}

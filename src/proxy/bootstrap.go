@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
@@ -10,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	network "aeroflare/src"
 )
 
 const (
@@ -25,83 +26,30 @@ func BootstrapConfig(ctx context.Context, client *http.Client, registry, reposit
 }
 
 func BootstrapConfigWithAnnotations(ctx context.Context, client *http.Client, registry, repository string, tokenMgr *TokenManager) (*RemoteConfig, map[string]string, error) {
-	token, err := tokenMgr.GetToken(context.Background())
+	token, err := tokenMgr.GetToken(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Fallback to avoid panics if nil is passed
-	if client == nil {
-		client = http.DefaultClient
-	}
-
-	proto := GetProtocol(registry)
-
-	// --- 1. Manifest Fetch ---
-	manifestURL := fmt.Sprintf("%s://%s/v2/%s/manifests/cache-config", proto, registry, repository)
-	req, err := http.NewRequestWithContext(ctx, "GET", manifestURL, nil)
+	anns, err := network.FetchAeroflareAnnotations(ctx, client, registry, repository, "cache-config", token)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed creating manifest request: %w", err)
-	}
-	req.Header.Set("Accept", ociManifestMediaType)
-	req.Header.Set("User-Agent", userAgent)
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+		return nil, nil, fmt.Errorf("failed to fetch cache-config annotations: %w", err)
 	}
 
-	manifestResp, err := client.Do(req)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed fetching manifest from %s: %w", manifestURL, err)
-	}
-	defer func() { _ = manifestResp.Body.Close() }()
-
-	if manifestResp.StatusCode != http.StatusOK {
-		return nil, nil, fmt.Errorf("config manifest HTTP %d for %s", manifestResp.StatusCode, manifestURL)
-	}
-
-	var manifest IndexManifest
-	if err := json.NewDecoder(manifestResp.Body).Decode(&manifest); err != nil {
-		return nil, nil, fmt.Errorf("failed decoding manifest JSON: %w", err)
-	}
-
-	if len(manifest.Layers) == 0 {
-		return nil, manifest.Annotations, fmt.Errorf("no layers in cache-config manifest")
-	}
-
-	// --- 2. Blob Fetch ---
-	digest := manifest.Layers[0].Digest
-	blobURL := fmt.Sprintf("%s://%s/v2/%s/blobs/%s", proto, registry, repository, digest)
-	blobReq, err := http.NewRequestWithContext(ctx, "GET", blobURL, nil)
-	if err != nil {
-		return nil, manifest.Annotations, fmt.Errorf("failed creating blob request: %w", err)
-	}
-	blobReq.Header.Set("User-Agent", userAgent)
-	if token != "" {
-		blobReq.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	blobResp, err := client.Do(blobReq)
-	if err != nil {
-		return nil, manifest.Annotations, fmt.Errorf("failed fetching blob from %s: %w", blobURL, err)
-	}
-	defer func() { _ = blobResp.Body.Close() }()
-
-	if blobResp.StatusCode != http.StatusOK {
-		return nil, manifest.Annotations, fmt.Errorf("config blob HTTP %d for %s", blobResp.StatusCode, blobURL)
-	}
-
-	var config RemoteConfig
-	if err := json.NewDecoder(blobResp.Body).Decode(&config); err != nil {
-		return nil, manifest.Annotations, fmt.Errorf("failed decoding blob JSON: %w", err)
-	}
-
-	if pk, ok := manifest.Annotations["aeroflare.public-key"]; ok && pk != "" && config.PublicKey == "" {
-		config.PublicKey = pk
-	} else if pk, ok := manifest.Annotations["public-key"]; ok && pk != "" && config.PublicKey == "" {
+	config := &RemoteConfig{}
+	
+	// Read directly from aeroflare annotations (assuming fields were stored there)
+	if pk, ok := anns["aeroflare.public-key"]; ok && pk != "" {
 		config.PublicKey = pk
 	}
+	if workerURL, ok := anns["aeroflare.worker-url"]; ok && workerURL != "" {
+		config.WorkerURL = workerURL
+	}
+	if upstream, ok := anns["aeroflare.upstream-caches"]; ok && upstream != "" {
+		config.UpstreamCaches = strings.Split(upstream, ",")
+	}
 
-	return &config, manifest.Annotations, nil
+	return config, anns, nil
 }
 
 // StartProxy starts the proxy HTTP server on the configured address.

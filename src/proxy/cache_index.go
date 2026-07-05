@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	network "aeroflare/src"
 )
 
 // CacheIndex handles loading, refreshing, and querying the cache index.
@@ -197,7 +199,7 @@ func (ci *CacheIndex) refresh(ctx context.Context) error {
 	}
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	proto := GetProtocol(ci.Registry)
+	proto := network.GetProtocol(ci.Registry)
 
 	// 1. Fetch manifest — this is the single source of truth for annotations.
 	manifestURL := fmt.Sprintf("%s://%s/v2/%s/manifests/cache-index", proto, ci.Registry, ci.Repository)

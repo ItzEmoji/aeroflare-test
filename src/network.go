@@ -1,6 +1,7 @@
 package network
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -11,7 +12,6 @@ import (
 
 	narhash "aeroflare/src/prepare/hash"
 	"aeroflare/src/prepare/narinfo"
-	"aeroflare/src/proxy"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -165,7 +165,7 @@ func PushBlob(filePath, registry, repository, token string) (string, error) {
 // PushLayer pushes an existing v1.Layer to the OCI registry.
 func PushLayer(layer v1.Layer, registry, repository, token string) error {
 	opts := []name.Option{}
-	if proxy.GetProtocol(registry) == "http" {
+	if GetProtocol(registry) == "http" {
 		opts = append(opts, name.Insecure)
 	}
 
@@ -189,7 +189,7 @@ func PushLayer(layer v1.Layer, registry, repository, token string) error {
 // repository should be the full repository path (e.g. "itzemoji/nix-cache-test/nix-cache")
 func PullBlob(digest, outFile, registry, repository, token string) error {
 	opts := []name.Option{}
-	if proxy.GetProtocol(registry) == "http" {
+	if GetProtocol(registry) == "http" {
 		opts = append(opts, name.Insecure)
 	}
 
@@ -258,7 +258,7 @@ func PushNarPackage(layer v1.Layer, ni *narinfo.Narinfo, tag, registry, reposito
 	}
 
 	opts := []name.Option{}
-	if proxy.GetProtocol(registry) == "http" {
+	if GetProtocol(registry) == "http" {
 		opts = append(opts, name.Insecure)
 	}
 
@@ -281,61 +281,32 @@ func PushNarPackage(layer v1.Layer, ni *narinfo.Narinfo, tag, registry, reposito
 // PullOCINativeManifest pulls the OCI image manifest by tag (e.g., <nix-hash>)
 // and reconstructs the Narinfo metadata from the manifest annotations.
 func PullOCINativeManifest(tag, registry, repository, token string) (*narinfo.Narinfo, error) {
-	opts := []name.Option{}
-	if proxy.GetProtocol(registry) == "http" {
-		opts = append(opts, name.Insecure)
-	}
-
-	refStr := fmt.Sprintf("%s/%s:%s", registry, repository, tag)
-	ref, err := name.NewTag(refStr, opts...)
+	anns, err := FetchAeroflareAnnotations(context.Background(), nil, registry, repository, tag, token)
 	if err != nil {
 		return nil, err
 	}
 
-	remoteOpts := []remote.Option{
-		remote.WithTransport(optimizedTransport),
-	}
-	if token != "" {
-		remoteOpts = append(remoteOpts, remote.WithAuth(&authn.Bearer{Token: token}))
-	}
-
-	desc, err := remote.Get(ref, remoteOpts...)
-	if err != nil {
-		return nil, err
-	}
-
-	img, err := desc.Image()
-	if err != nil {
-		return nil, err
-	}
-
-	manifest, err := img.Manifest()
-	if err != nil {
-		return nil, err
-	}
-
-	anns := manifest.Annotations
-
-	fileSize, _ := strconv.ParseInt(anns["vnd.aeroflare.nar.filesize"], 10, 64)
-	narSize, _ := strconv.ParseInt(anns["vnd.aeroflare.nar.narsize"], 10, 64)
+	// aeroflare.* keys are lowercase
+	fileSize, _ := strconv.ParseInt(anns["aeroflare.filesize"], 10, 64)
+	narSize, _ := strconv.ParseInt(anns["aeroflare.narsize"], 10, 64)
 
 	var refs []string
-	if r, ok := anns["vnd.aeroflare.nar.references"]; ok && r != "" {
+	if r, ok := anns["aeroflare.references"]; ok && r != "" {
 		refs = strings.Split(r, " ")
 	}
 
 	ni := &narinfo.Narinfo{
-		StorePath:   anns["vnd.aeroflare.nar.storepath"],
-		URL:         anns["vnd.aeroflare.nar.url"],
-		Compression: anns["vnd.aeroflare.nar.compression"],
-		FileHash:    anns["vnd.aeroflare.nar.filehash"],
+		StorePath:   anns["aeroflare.storepath"],
+		URL:         anns["aeroflare.url"],
+		Compression: anns["aeroflare.compression"],
+		FileHash:    anns["aeroflare.filehash"],
 		FileSize:    fileSize,
-		NarHash:     anns["vnd.aeroflare.nar.narhash"],
+		NarHash:     anns["aeroflare.narhash"],
 		NarSize:     narSize,
 		References:  refs,
-		Deriver:     anns["vnd.aeroflare.nar.deriver"],
-		System:      anns["vnd.aeroflare.nar.system"],
-		Sig:         anns["vnd.aeroflare.nar.sig"],
+		Deriver:     anns["aeroflare.deriver"],
+		System:      anns["aeroflare.system"],
+		Sig:         anns["aeroflare.sig"],
 	}
 
 	return ni, nil
@@ -388,7 +359,7 @@ func PushNarPackagesBatch(registry, repository, token string, jobs []PushJob, ma
 			}
 
 			opts := []name.Option{}
-			if proxy.GetProtocol(registry) == "http" {
+			if GetProtocol(registry) == "http" {
 				opts = append(opts, name.Insecure)
 			}
 
@@ -418,7 +389,7 @@ func PushNarPackagesBatch(registry, repository, token string, jobs []PushJob, ma
 // DeleteTag deletes a tag from the OCI registry.
 func DeleteTag(tag, registry, repository, token string) error {
 	opts := []name.Option{}
-	if proxy.GetProtocol(registry) == "http" {
+	if GetProtocol(registry) == "http" {
 		opts = append(opts, name.Insecure)
 	}
 
@@ -436,4 +407,12 @@ func DeleteTag(tag, registry, repository, token string) error {
 	}
 
 	return remote.Delete(ref, remoteOpts...)
+}
+
+// GetProtocol determines http vs https protocol (useful for local mock registry tests)
+func GetProtocol(registry string) string {
+	if strings.HasPrefix(registry, "127.0.0.1") || strings.HasPrefix(registry, "localhost") {
+		return "http"
+	}
+	return "https"
 }

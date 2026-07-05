@@ -142,6 +142,8 @@ func TestProxyServerEndpoints(t *testing.T) {
 func TestBootstrapConfig(t *testing.T) {
 	mockRegistry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/v2/":
+			w.WriteHeader(http.StatusOK)
 		case "/token":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
@@ -151,21 +153,27 @@ func TestBootstrapConfig(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{
 				"schemaVersion": 2,
+				"config": {
+					"mediaType": "application/vnd.oci.empty.v1+json",
+					"digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+					"size": 2
+				},
+				"annotations": {
+					"aeroflare.public-key": "remote-key-data",
+					"aeroflare.worker-url": "https://remote-worker.dev",
+					"aeroflare.upstream-caches": "https://cache.nixos.org,https://nix-community.cachix.org"
+				},
 				"layers": [
 					{
 						"mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
-						"digest": "sha256:config-blob-digest",
+						"digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
 						"size": 100
 					}
 				]
 			}`))
-		case "/v2/test-repo/nix-cache/blobs/sha256:config-blob-digest":
+		case "/v2/test-repo/nix-cache/blobs/sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a":
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{
-				"worker_url": "https://remote-worker.dev",
-				"public_key": "remote-key-data",
-				"upstream_caches": ["https://cache.nixos.org", "https://nix-community.cachix.org"]
-			}`))
+			_, _ = w.Write([]byte(`{}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -214,58 +222,7 @@ func TestBootstrapConfig_ManifestNotFound(t *testing.T) {
 	}
 }
 
-// TestBootstrapConfig_EmptyLayers verifies that BootstrapConfig returns an error when manifest has no layers.
-func TestBootstrapConfig_EmptyLayers(t *testing.T) {
-	mockRegistry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/token" {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"token": "mock-token"}`))
-			return
-		}
-		if strings.HasSuffix(r.URL.Path, "/manifests/cache-config") {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"schemaVersion": 2, "layers": []}`))
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer mockRegistry.Close()
 
-	u := strings.TrimPrefix(mockRegistry.URL, "http://")
-	tokenMgr := NewTokenManager(u, "test-repo/nix-cache", "")
-	_, err := BootstrapConfig(context.Background(), nil, u, "test-repo/nix-cache", tokenMgr)
-	if err == nil {
-		t.Fatal("Expected error when manifest has empty layers, got nil")
-	}
-}
-
-// TestBootstrapConfig_BlobNotFound verifies that BootstrapConfig returns an error when the config blob is not found.
-func TestBootstrapConfig_BlobNotFound(t *testing.T) {
-	mockRegistry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/token" {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"token": "mock-token"}`))
-			return
-		}
-		if strings.HasSuffix(r.URL.Path, "/manifests/cache-config") {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"schemaVersion": 2, "layers": [{"digest": "sha256:missingblob", "size": 10}]}`))
-			return
-		}
-		// Return 404 for the blob
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer mockRegistry.Close()
-
-	u := strings.TrimPrefix(mockRegistry.URL, "http://")
-	tokenMgr := NewTokenManager(u, "test-repo/nix-cache", "")
-	_, err := BootstrapConfig(context.Background(), nil, u, "test-repo/nix-cache", tokenMgr)
-	if err == nil {
-		t.Fatal("Expected error when blob returns 404, got nil")
-	}
-}
 
 // TestProxyHandler_MethodNotAllowed verifies that unsupported HTTP methods return 405.
 func TestProxyHandler_MethodNotAllowed(t *testing.T) {
