@@ -15,31 +15,6 @@ type BackendConfig struct {
 	R2                *R2Config
 }
 
-// Dummy backend implementations to satisfy interface for now
-type JSONBackend struct {
-	cfg BackendConfig
-}
-
-func (b *JSONBackend) PushReceipts(ctx context.Context, receipts []PushReceipt) error {
-	return nil
-}
-
-type R2Backend struct {
-	cfg BackendConfig
-}
-
-func (b *R2Backend) PushReceipts(ctx context.Context, receipts []PushReceipt) error {
-	return nil
-}
-
-type NativeBackend struct {
-	cfg BackendConfig
-}
-
-func (b *NativeBackend) PushReceipts(ctx context.Context, receipts []PushReceipt) error {
-	return nil
-}
-
 func NewCacheBackend(cfg BackendConfig) CacheBackend {
 	backendType := "native"
 	if cfg.ConfigAnnotations != nil && cfg.ConfigAnnotations["aeroflare.index-type"] != "" {
@@ -54,8 +29,6 @@ func NewCacheBackend(cfg BackendConfig) CacheBackend {
 		return &JSONBackend{cfg: cfg}
 	case "r2":
 		return &R2Backend{cfg: cfg}
-	case "native":
-		fallthrough
 	default:
 		return &NativeBackend{cfg: cfg}
 	}
