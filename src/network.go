@@ -22,7 +22,7 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
-	"sync"
+	"golang.org/x/sync/errgroup"
 	"time"
 )
 
@@ -351,51 +351,51 @@ type PushJob struct {
 // O(1) Lookup Tagging Rule: The Tag passed in PushJob MUST strictly be the 32-character Nix hash
 // (e.g., xn2nlmvng2im9mgrq46y3wkbz4ll1hnp) to ensure O(1) lookups during pulls later.
 func PushNarPackagesBatch(registry, repository, token string, jobs []PushJob, maxWorkers int) error {
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, maxWorkers)
-	var firstErr error
-	var errOnce sync.Once
+	var eg errgroup.Group
+	eg.SetLimit(maxWorkers)
 
 	for _, job := range jobs {
-		wg.Add(1)
-		sem <- struct{}{} // acquire
+		job := job // Create a local copy for the goroutine
+		eg.Go(func() error {
+			compVal := job.NarinfoAnnotations["aeroflare.compression"]
 
-		go func(j PushJob) {
-			defer wg.Done()
-			defer func() { <-sem }() // release
-
-			comp := j.NarinfoAnnotations["vnd.aeroflare.nar.compression"]
-			layer, _, err := NewLayer(j.FilePath, types.MediaType("application/vnd.aeroflare.nar.v1+"+comp))
+			layer, _, err := NewLayer(job.FilePath, types.MediaType("application/vnd.aeroflare.nar.v1+"+compVal))
 			if err != nil {
-				errOnce.Do(func() { firstErr = err })
-				return
+				return err
 			}
 
 			img := mutate.MediaType(empty.Image, types.OCIManifestSchema1)
 			img = mutate.ConfigMediaType(img, types.OCIConfigJSON)
 
-			layerMediaType, _ := layer.MediaType()
+			layerMediaType, err := layer.MediaType()
+			if err != nil {
+				return err
+			}
+
 			img, err = mutate.Append(img, mutate.Addendum{
 				Layer:     layer,
 				MediaType: layerMediaType,
 			})
 			if err != nil {
-				errOnce.Do(func() { firstErr = err })
-				return
+				return err
 			}
 
-			img = mutate.Annotations(img, j.NarinfoAnnotations).(v1.Image)
+			img = mutate.Annotations(img, job.NarinfoAnnotations).(v1.Image)
+
+			finalNarImg := &withArtifactType{
+				Image:        img,
+				artifactType: "application/vnd.aeroflare.nar.v1",
+			}
 
 			opts := []name.Option{}
 			if proxy.GetProtocol(registry) == "http" {
 				opts = append(opts, name.Insecure)
 			}
 
-			refStr := fmt.Sprintf("%s/%s:%s", registry, repository, j.Tag)
+			refStr := fmt.Sprintf("%s/%s:%s", registry, repository, job.Tag)
 			ref, err := name.NewTag(refStr, opts...)
 			if err != nil {
-				errOnce.Do(func() { firstErr = err })
-				return
+				return err
 			}
 
 			remoteOpts := []remote.Option{
@@ -405,16 +405,14 @@ func PushNarPackagesBatch(registry, repository, token string, jobs []PushJob, ma
 				remoteOpts = append(remoteOpts, remote.WithAuth(&authn.Bearer{Token: token}))
 			}
 
-			err = remote.Write(ref, img, remoteOpts...)
-			if err != nil {
-				errOnce.Do(func() { firstErr = err })
-				return
+			if err := remote.Write(ref, finalNarImg, remoteOpts...); err != nil {
+				return err
 			}
-		}(job)
+			return nil
+		})
 	}
 
-	wg.Wait()
-	return firstErr
+	return eg.Wait()
 }
 
 // DeleteTag deletes a tag from the OCI registry.
