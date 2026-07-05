@@ -57,12 +57,20 @@ func (b *R2Backend) PushReceipts(ctx context.Context, receipts []PushReceipt) er
 			"layers": layers,
 		}
 
-		manifestBytes, _ := json.Marshal(manifest)
-		chunkTag := fmt.Sprintf("chunk-%d", time.Now().Unix())
+		manifestBytes, err := json.Marshal(manifest)
+		if err != nil {
+			return fmt.Errorf("failed to marshal chunk manifest: %w", err)
+		}
+		
+		chunkTag := fmt.Sprintf("chunk-%d", time.Now().UnixNano())
 		protocol := GetProtocol(b.cfg.Registry)
 		manifestURL := fmt.Sprintf("%s://%s/v2/%s/manifests/%s", protocol, b.cfg.Registry, b.cfg.Repository, chunkTag)
 
-		req, _ := http.NewRequest("PUT", manifestURL, bytes.NewReader(manifestBytes))
+		req, err := http.NewRequestWithContext(ctx, "PUT", manifestURL, bytes.NewReader(manifestBytes))
+		if err != nil {
+			return fmt.Errorf("failed to create chunk manifest request: %w", err)
+		}
+		
 		req.Header.Set("Authorization", "Bearer "+b.cfg.Token)
 		req.Header.Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
 
