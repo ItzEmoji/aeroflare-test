@@ -244,28 +244,18 @@ func PushNarPackage(layer v1.Layer, ni *narinfo.Narinfo, tag, registry, reposito
 		return err
 	}
 
-	// Annotate Manifest
-	annotations := map[string]string{
-		"vnd.aeroflare.nar.storepath":   ni.StorePath,
-		"vnd.aeroflare.nar.url":         ni.URL,
-		"vnd.aeroflare.nar.compression": ni.Compression,
-		"vnd.aeroflare.nar.filehash":    ni.FileHash,
-		"vnd.aeroflare.nar.filesize":    strconv.FormatInt(ni.FileSize, 10),
-		"vnd.aeroflare.nar.narhash":     ni.NarHash,
-		"vnd.aeroflare.nar.narsize":     strconv.FormatInt(ni.NarSize, 10),
-		"vnd.aeroflare.nar.system":      ni.System,
-	}
-	if len(ni.References) > 0 {
-		annotations["vnd.aeroflare.nar.references"] = strings.Join(ni.References, " ")
-	}
-	if ni.Deriver != "" {
-		annotations["vnd.aeroflare.nar.deriver"] = ni.Deriver
-	}
-	if ni.Sig != "" {
-		annotations["vnd.aeroflare.nar.sig"] = ni.Sig
+	// Reconstruct Narinfo text and parse to aeroflare.* annotations
+	annotations, err := ParseAeroflareMetadata(ni.String())
+	if err != nil {
+		return err
 	}
 
 	img = mutate.Annotations(img, annotations).(v1.Image)
+
+	finalNarImg := &withArtifactType{
+		Image:        img,
+		artifactType: "application/vnd.aeroflare.nar.v1",
+	}
 
 	opts := []name.Option{}
 	if proxy.GetProtocol(registry) == "http" {
@@ -285,7 +275,7 @@ func PushNarPackage(layer v1.Layer, ni *narinfo.Narinfo, tag, registry, reposito
 		remoteOpts = append(remoteOpts, remote.WithAuth(&authn.Bearer{Token: token}))
 	}
 
-	return remote.Write(ref, img, remoteOpts...)
+	return remote.Write(ref, finalNarImg, remoteOpts...)
 }
 
 // PullOCINativeManifest pulls the OCI image manifest by tag (e.g., <nix-hash>)
