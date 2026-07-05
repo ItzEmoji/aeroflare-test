@@ -10,7 +10,10 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -150,36 +153,47 @@ func UpdateCacheIndex(receipts []PushReceipt, existingIndex *PushCacheIndex, reg
 	}
 
 	newEntriesCount := 0
+	var mu sync.Mutex
+	var eg errgroup.Group
+
 	for _, r := range receipts {
-		b, err := os.ReadFile(r.NarinfoPath)
-		if err != nil {
-			continue
-		}
-
-		basename := filepath.Base(r.StorePath)
-		parts := strings.SplitN(basename, "-", 2)
-		if len(parts) < 2 {
-			continue
-		}
-		hash := parts[0]
-		name := parts[1]
-
-		newIndex.Entries[hash] = PushCacheEntry{
-			Name:      name,
-			Narinfo:   string(b),
-			NarDigest: r.NarDigest,
-			NarSize:   r.NarSize,
-			Added:     newIndex.Generated,
-		}
-		newEntriesCount++
-
-		if r.IsRoot {
-			if !gcRootsSet[hash] {
-				newIndex.GCRoots = append(newIndex.GCRoots, hash)
-				gcRootsSet[hash] = true
+		r := r
+		eg.Go(func() error {
+			b, err := os.ReadFile(r.NarinfoPath)
+			if err != nil {
+				return nil
 			}
-		}
+
+			basename := filepath.Base(r.StorePath)
+			parts := strings.SplitN(basename, "-", 2)
+			if len(parts) < 2 {
+				return nil
+			}
+			hash := parts[0]
+			name := parts[1]
+
+			mu.Lock()
+			newIndex.Entries[hash] = PushCacheEntry{
+				Name:      name,
+				Narinfo:   string(b),
+				NarDigest: r.NarDigest,
+				NarSize:   r.NarSize,
+				Added:     newIndex.Generated,
+			}
+			newEntriesCount++
+
+			if r.IsRoot {
+				if !gcRootsSet[hash] {
+					newIndex.GCRoots = append(newIndex.GCRoots, hash)
+					gcRootsSet[hash] = true
+				}
+			}
+			mu.Unlock()
+
+			return nil
+		})
 	}
+	_ = eg.Wait()
 
 	sort.Strings(newIndex.GCRoots)
 

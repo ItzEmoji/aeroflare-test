@@ -18,100 +18,161 @@ func TestJSONBackend_PushReceipts(t *testing.T) {
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	narinfoPath := filepath.Join(tmpDir, "test.narinfo")
-	narinfoData := `StorePath: /nix/store/11111111111111111111111111111111-test
-URL: test.nar
+	narinfoPath1 := filepath.Join(tmpDir, "test1.narinfo")
+	narinfoData1 := `StorePath: /nix/store/11111111111111111111111111111111-test1
+URL: test1.nar
 Compression: none
-FileHash: sha256:0j56d7hwksf9zckz58ps8q969h7aak13d9s6n33sjslyfkkb3swx
+FileHash: sha256:fake1
 FileSize: 13
-NarHash: sha256:0j56d7hwksf9zckz58ps8q969h7aak13d9s6n33sjslyfkkb3swx
+NarHash: sha256:fake1
 NarSize: 13
 References:
 Deriver: 22222222222222222222222222222222-test.drv
 System: x86_64-linux
 Sig: `
-	err = os.WriteFile(narinfoPath, []byte(narinfoData), 0644)
+	err = os.WriteFile(narinfoPath1, []byte(narinfoData1), 0644)
 	if err != nil {
 		t.Fatalf("Failed to create narinfo file: %v", err)
 	}
 
-	var mu sync.Mutex
-	var fetchedIndex, pushedIndex bool
-
-	mockRegistry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v2/" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-
-		if r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/v2/test-repo/manifests/cache-index") {
-			mu.Lock()
-			fetchedIndex = true
-			mu.Unlock()
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-
-		if r.Method == "POST" && strings.HasPrefix(r.URL.Path, "/v2/test-repo/blobs/uploads/") {
-			w.Header().Set("Location", r.URL.Path+"1234")
-			w.WriteHeader(http.StatusAccepted)
-			return
-		}
-		if r.Method == "PATCH" && strings.HasPrefix(r.URL.Path, "/v2/test-repo/blobs/uploads/") {
-			w.Header().Set("Location", r.URL.Path)
-			w.WriteHeader(http.StatusAccepted)
-			return
-		}
-		if r.Method == "PUT" && strings.HasPrefix(r.URL.Path, "/v2/test-repo/blobs/uploads/") {
-			w.WriteHeader(http.StatusCreated)
-			return
-		}
-		if r.Method == "HEAD" && strings.HasPrefix(r.URL.Path, "/v2/test-repo/blobs/") {
-			w.WriteHeader(http.StatusNotFound) // force upload
-			return
-		}
-
-		if r.Method == "PUT" && strings.HasPrefix(r.URL.Path, "/v2/test-repo/manifests/cache-index") {
-			mu.Lock()
-			pushedIndex = true
-			mu.Unlock()
-			w.WriteHeader(http.StatusCreated)
-			return
-		}
-
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer mockRegistry.Close()
-
-	u := strings.TrimPrefix(mockRegistry.URL, "http://")
-
-	cfg := BackendConfig{
-		Registry:   u,
-		Repository: "test-repo",
-		Token:      "mock-token",
-	}
-	backend := &JSONBackend{cfg: cfg}
-
-	receipts := []PushReceipt{
-		{
-			StorePath:   "/nix/store/11111111111111111111111111111111-test",
-			NarinfoPath: narinfoPath,
-			NarDigest:   "sha256:fake",
-			NarSize:     13,
-			IsRoot:      true,
-		},
-	}
-
-	err = backend.PushReceipts(context.Background(), receipts)
+	narinfoPath2 := filepath.Join(tmpDir, "test2.narinfo")
+	narinfoData2 := `StorePath: /nix/store/33333333333333333333333333333333-test2
+URL: test2.nar
+Compression: none
+FileHash: sha256:fake2
+FileSize: 13
+NarHash: sha256:fake2
+NarSize: 13
+References:
+Deriver: 22222222222222222222222222222222-test.drv
+System: x86_64-linux
+Sig: `
+	err = os.WriteFile(narinfoPath2, []byte(narinfoData2), 0644)
 	if err != nil {
-		t.Fatalf("PushReceipts failed: %v", err)
+		t.Fatalf("Failed to create narinfo file: %v", err)
 	}
 
-	if !fetchedIndex {
-		t.Errorf("PushReceipts did not fetch existing index")
+	setupMock := func() (*httptest.Server, *bool, *bool) {
+		var mu sync.Mutex
+		var fetchedIndex, pushedIndex bool
+
+		mockRegistry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/v2/" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+
+			if r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/v2/test-repo/manifests/cache-index") {
+				mu.Lock()
+				fetchedIndex = true
+				mu.Unlock()
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+
+			if r.Method == "POST" && strings.HasPrefix(r.URL.Path, "/v2/test-repo/blobs/uploads/") {
+				w.Header().Set("Location", r.URL.Path+"1234")
+				w.WriteHeader(http.StatusAccepted)
+				return
+			}
+			if r.Method == "PATCH" && strings.HasPrefix(r.URL.Path, "/v2/test-repo/blobs/uploads/") {
+				w.Header().Set("Location", r.URL.Path)
+				w.WriteHeader(http.StatusAccepted)
+				return
+			}
+			if r.Method == "PUT" && strings.HasPrefix(r.URL.Path, "/v2/test-repo/blobs/uploads/") {
+				w.WriteHeader(http.StatusCreated)
+				return
+			}
+			if r.Method == "HEAD" && strings.HasPrefix(r.URL.Path, "/v2/test-repo/blobs/") {
+				w.WriteHeader(http.StatusNotFound) // force upload
+				return
+			}
+
+			if r.Method == "PUT" && strings.HasPrefix(r.URL.Path, "/v2/test-repo/manifests/cache-index") {
+				mu.Lock()
+				pushedIndex = true
+				mu.Unlock()
+				w.WriteHeader(http.StatusCreated)
+				return
+			}
+
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		return mockRegistry, &fetchedIndex, &pushedIndex
 	}
 
-	if !pushedIndex {
-		t.Errorf("PushReceipts did not push updated index")
-	}
+	t.Run("SingleReceipt", func(t *testing.T) {
+		mockRegistry, fetchedIndex, pushedIndex := setupMock()
+		defer mockRegistry.Close()
+
+		u := strings.TrimPrefix(mockRegistry.URL, "http://")
+		cfg := BackendConfig{Registry: u, Repository: "test-repo", Token: "mock-token"}
+		backend := &JSONBackend{cfg: cfg}
+
+		receipts := []PushReceipt{
+			{StorePath: "/nix/store/11111111111111111111111111111111-test1", NarinfoPath: narinfoPath1, NarDigest: "sha256:fake1", NarSize: 13, IsRoot: true},
+		}
+
+		err = backend.PushReceipts(context.Background(), receipts)
+		if err != nil {
+			t.Fatalf("PushReceipts failed: %v", err)
+		}
+
+		if !*fetchedIndex {
+			t.Errorf("PushReceipts did not fetch existing index")
+		}
+		if !*pushedIndex {
+			t.Errorf("PushReceipts did not push updated index")
+		}
+	})
+
+	t.Run("EmptyReceipts", func(t *testing.T) {
+		mockRegistry, fetchedIndex, pushedIndex := setupMock()
+		defer mockRegistry.Close()
+
+		u := strings.TrimPrefix(mockRegistry.URL, "http://")
+		cfg := BackendConfig{Registry: u, Repository: "test-repo", Token: "mock-token"}
+		backend := &JSONBackend{cfg: cfg}
+
+		receipts := []PushReceipt{}
+
+		err = backend.PushReceipts(context.Background(), receipts)
+		if err != nil {
+			t.Fatalf("PushReceipts failed: %v", err)
+		}
+
+		if !*fetchedIndex {
+			t.Errorf("PushReceipts did not fetch existing index")
+		}
+		if !*pushedIndex {
+			t.Errorf("PushReceipts did not push updated index")
+		}
+	})
+
+	t.Run("MultipleReceipts", func(t *testing.T) {
+		mockRegistry, fetchedIndex, pushedIndex := setupMock()
+		defer mockRegistry.Close()
+
+		u := strings.TrimPrefix(mockRegistry.URL, "http://")
+		cfg := BackendConfig{Registry: u, Repository: "test-repo", Token: "mock-token"}
+		backend := &JSONBackend{cfg: cfg}
+
+		receipts := []PushReceipt{
+			{StorePath: "/nix/store/11111111111111111111111111111111-test1", NarinfoPath: narinfoPath1, NarDigest: "sha256:fake1", NarSize: 13, IsRoot: true},
+			{StorePath: "/nix/store/33333333333333333333333333333333-test2", NarinfoPath: narinfoPath2, NarDigest: "sha256:fake2", NarSize: 13, IsRoot: false},
+		}
+
+		err = backend.PushReceipts(context.Background(), receipts)
+		if err != nil {
+			t.Fatalf("PushReceipts failed: %v", err)
+		}
+
+		if !*fetchedIndex {
+			t.Errorf("PushReceipts did not fetch existing index")
+		}
+		if !*pushedIndex {
+			t.Errorf("PushReceipts did not push updated index")
+		}
+	})
 }
