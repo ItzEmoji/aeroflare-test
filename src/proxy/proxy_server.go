@@ -189,6 +189,10 @@ func (ps *ProxyServer) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// serveNarInfo resolves a "<hash>.narinfo" request according to the cache's
+// current IndexType: redirect to R2, look up a native OCI manifest, or serve
+// from the locally cached json index — falling back to the upstream caches
+// if the current mode can't satisfy the request.
 func (ps *ProxyServer) serveNarInfo(w http.ResponseWriter, r *http.Request, path string) {
 	// Ensure cache is initialized before checking IndexType
 	ps.CacheIndex.Get(r.Context())
@@ -236,6 +240,9 @@ func (ps *ProxyServer) serveNarInfo(w http.ResponseWriter, r *http.Request, path
 	http.Error(w, "Narinfo Not Found", http.StatusNotFound)
 }
 
+// serveNar resolves a "/nar/<basename>" request by deriving the GHCR blob
+// digest for the mode currently reported by IndexType, streaming it from
+// GHCR if found, and otherwise falling back to the upstream caches.
 func (ps *ProxyServer) serveNar(w http.ResponseWriter, r *http.Request, path string, method string) {
 	// Ensure cache is initialized before checking IndexType
 	ps.CacheIndex.Get(r.Context())
@@ -288,6 +295,10 @@ func (ps *ProxyServer) serveNar(w http.ResponseWriter, r *http.Request, path str
 	http.Error(w, "NAR Not Found", http.StatusNotFound)
 }
 
+// serveNativeNarinfo reconstructs a narinfo file from the OCI manifest tagged
+// with storeHash (native mode): the vnd.aeroflare.nar.* fields are read from
+// the manifest's annotations/labels, falling back to the image config's
+// labels via fetchConfigLabels if the manifest itself doesn't carry them.
 func (ps *ProxyServer) serveNativeNarinfo(w http.ResponseWriter, r *http.Request, storeHash string) error {
 	proto := network.GetProtocol(ps.Registry)
 	manifestURL := fmt.Sprintf("%s://%s/v2/%s/manifests/%s", proto, ps.Registry, ps.Repository, storeHash)
@@ -376,6 +387,9 @@ func (ps *ProxyServer) serveNativeNarinfo(w http.ResponseWriter, r *http.Request
 	return nil
 }
 
+// digestFromNativeManifest fetches the OCI manifest tagged with the NAR's
+// store hash (native mode) and returns its first layer's digest, which is
+// the GHCR blob digest for that NAR.
 func (ps *ProxyServer) digestFromNativeManifest(ctx context.Context, narBasename string) (string, error) {
 	tag := narBasename
 	if idx := strings.Index(tag, ".nar"); idx != -1 {
@@ -418,10 +432,14 @@ func (ps *ProxyServer) digestFromNativeManifest(ctx context.Context, narBasename
 	return manifest.Layers[0].Digest, nil
 }
 
+// fetchConfigLabels downloads the OCI image config blob at configDigest and
+// returns its labels, checking both the "Labels"/"labels" key at the top
+// level and nested under "config" (different tools populate different
+// locations). Returns a nil map (no error) if no labels are present anywhere.
 func (ps *ProxyServer) fetchConfigLabels(ctx context.Context, configDigest string) (map[string]string, error) {
 	proto := network.GetProtocol(ps.Registry)
-	url := fmt.Sprintf("%s://%s/v2/%s/blobs/%s", proto, ps.Registry, ps.Repository, configDigest)
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	blobURL := fmt.Sprintf("%s://%s/v2/%s/blobs/%s", proto, ps.Registry, ps.Repository, configDigest)
+	req, err := http.NewRequestWithContext(ctx, "GET", blobURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -514,6 +532,10 @@ func (ps *ProxyServer) digestFromR2Narinfo(ctx context.Context, narBasename stri
 	return fileHashToBlobDigest(string(body))
 }
 
+// streamBlob fetches the blob at digest from GHCR and copies it directly to
+// w. If the copy is interrupted partway through, it panics with
+// http.ErrAbortHandler rather than returning normally, so the client sees a
+// broken connection instead of what looks like a complete-but-truncated body.
 func (ps *ProxyServer) streamBlob(ctx context.Context, w http.ResponseWriter, digest string, contentType string, method string) error {
 	token, err := ps.TokenMgr.GetToken(ctx)
 	if err != nil {
@@ -521,8 +543,8 @@ func (ps *ProxyServer) streamBlob(ctx context.Context, w http.ResponseWriter, di
 	}
 
 	proto := network.GetProtocol(ps.Registry)
-	url := fmt.Sprintf("%s://%s/v2/%s/blobs/%s", proto, ps.Registry, ps.Repository, digest)
-	req, err := http.NewRequestWithContext(ctx, method, url, nil)
+	blobURL := fmt.Sprintf("%s://%s/v2/%s/blobs/%s", proto, ps.Registry, ps.Repository, digest)
+	req, err := http.NewRequestWithContext(ctx, method, blobURL, nil)
 	if err != nil {
 		return err
 	}
@@ -558,6 +580,11 @@ func (ps *ProxyServer) streamBlob(ctx context.Context, w http.ResponseWriter, di
 	}
 	return nil
 }
+
+// proxyUpstream tries each configured upstream cache in order for
+// upstreamPath, streaming and returning true on the first 200 OK response.
+// Non-200 responses and network errors move on to the next upstream; it
+// returns false once all upstreams have been tried (or none are configured).
 func (ps *ProxyServer) proxyUpstream(w http.ResponseWriter, r *http.Request, upstreamPath string) bool {
 	if len(ps.UpstreamCaches) == 0 {
 		return false

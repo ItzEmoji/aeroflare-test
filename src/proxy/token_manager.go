@@ -35,7 +35,11 @@ func NewTokenManager(registry, repository, githubToken string) *TokenManager {
 		registry = reg.RegistryStr()
 	}
 
-	// Check for static token overrides once during initialization
+	// Check for a static token override once during initialization. Reject
+	// values that look like GitHub/GitLab personal-access tokens (common
+	// prefixes below): those are not valid OCI bearer tokens, so a user who
+	// pasted one into oci_token/NIXCACHE_TOKEN by mistake falls through to
+	// normal token exchange instead of sending an invalid Authorization header.
 	var override string
 	if t := os.Getenv("oci_token"); t != "" && !strings.HasPrefix(t, "ghp_") && !strings.HasPrefix(t, "github_pat_") && !strings.HasPrefix(t, "glpat-") && !strings.HasPrefix(t, "gho_") && !strings.HasPrefix(t, "ghu_") && !strings.HasPrefix(t, "ghs_") {
 		override = t
@@ -94,6 +98,10 @@ func (tm *TokenManager) GetToken(ctx context.Context) (string, error) {
 	return tm.token, nil
 }
 
+// fetchToken performs the anonymous (or GitHub-authenticated) OAuth2-style
+// token exchange against the registry's /token endpoint and returns the
+// bearer token along with its advertised lifetime in seconds (0 if the
+// registry didn't report one).
 func (tm *TokenManager) fetchToken(ctx context.Context) (string, int, error) {
 	scope := fmt.Sprintf("repository:%s:pull", tm.repository)
 	proto := network.GetProtocol(tm.registry)

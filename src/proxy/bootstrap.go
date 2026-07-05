@@ -18,13 +18,18 @@ const (
 	ociManifestMediaType = "application/vnd.oci.image.manifest.v1+json"
 )
 
-// BootstrapConfig fetches configuration dynamically from the OCI-Registry.
-// Now accepts an *http.Client to utilize connection pooling from the caller.
+// BootstrapConfig fetches the dynamic RemoteConfig (worker URL, public key,
+// upstream caches) from the "cache-config" annotations on the OCI registry.
+// The caller-supplied *http.Client is reused so its transport's connection
+// pool is shared with the rest of the proxy.
 func BootstrapConfig(ctx context.Context, client *http.Client, registry, repository string, tokenMgr *TokenManager) (*RemoteConfig, error) {
 	config, _, err := BootstrapConfigWithAnnotations(ctx, client, registry, repository, tokenMgr)
 	return config, err
 }
 
+// BootstrapConfigWithAnnotations is BootstrapConfig, additionally returning
+// the raw annotation map so callers (e.g. the CacheIndex refresh path) can
+// read fields beyond the ones RemoteConfig models.
 func BootstrapConfigWithAnnotations(ctx context.Context, client *http.Client, registry, repository string, tokenMgr *TokenManager) (*RemoteConfig, map[string]string, error) {
 	token, err := tokenMgr.GetToken(ctx)
 	if err != nil {
@@ -142,8 +147,9 @@ func StartProxy(ctx context.Context, port int, listenAddr string, registry strin
 	server := &http.Server{
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
-		// Replaced strict WriteTimeout with IdleTimeout to prevent Slowloris
-		// without killing active multi-gigabyte derivations mid-download.
+		// IdleTimeout (not a strict WriteTimeout) guards against Slowloris-style
+		// idle connections without killing active multi-gigabyte NAR downloads
+		// mid-transfer.
 		IdleTimeout: 120 * time.Second,
 	}
 

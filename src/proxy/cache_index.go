@@ -44,6 +44,10 @@ type CacheIndex struct {
 	Repository          string
 }
 
+// IndexType returns the cache's backend mode ("r2", "native", or "json"),
+// read from the cache-index manifest annotations captured by the last
+// refresh. Defaults to "json" when no annotations have been loaded yet or
+// none of the recognized keys are present.
 func (ci *CacheIndex) IndexType() string {
 	ci.mu.RLock()
 	defer ci.mu.RUnlock()
@@ -154,6 +158,9 @@ func (ci *CacheIndex) ForceRefresh(ctx context.Context) (int, error) {
 	return entries, nil
 }
 
+// loadLocal reads the last-persisted cache-index JSON blob from disk (json
+// mode) and populates the in-memory index and NAR lookup map from it. Used
+// to seed the cache at startup and as a fallback when a refresh fails.
 func (ci *CacheIndex) loadLocal() error {
 	if ci.CacheFileName == "" {
 		ci.CacheFileName = "cache-index.json"
@@ -171,6 +178,9 @@ func (ci *CacheIndex) loadLocal() error {
 	return nil
 }
 
+// updateInMemory installs data as the current index and rebuilds NarLookups
+// (narBasename -> narDigest) by extracting the "URL: " field's basename out
+// of each entry's narinfo text (json mode only).
 func (ci *CacheIndex) updateInMemory(data *CacheIndexData) {
 	narLookups := make(map[string]string)
 	if data.Entries != nil {
@@ -203,6 +213,11 @@ func (ci *CacheIndex) updateInMemory(data *CacheIndexData) {
 	ci.mu.Unlock()
 }
 
+// refresh re-fetches the cache-config (or, on failure, cache-index) manifest
+// annotations to determine the current IndexType, then, only in json mode,
+// downloads the full index blob and persists it locally via updateInMemory.
+// In r2/native mode the in-memory index is cleared instead, since narinfo is
+// served without it. Callers must hold refreshMu for the duration of a call.
 func (ci *CacheIndex) refresh(ctx context.Context) error {
 	token, err := ci.TokenMgr.GetToken(ctx)
 	if err != nil {
@@ -244,7 +259,7 @@ func (ci *CacheIndex) refresh(ctx context.Context) error {
 		return nil
 	}
 
-	// 2. Fetch cache-index manifest to get the json index blob
+	// 2. Fetch the cache-index image manifest to locate the json index blob's digest.
 	imageRef := fmt.Sprintf("%s/%s:cache-index", ci.Registry, ci.Repository)
 	ref, err := name.ParseReference(imageRef)
 	if err != nil {
@@ -281,7 +296,7 @@ func (ci *CacheIndex) refresh(ctx context.Context) error {
 
 	digest := manifest.Layers[0].Digest.String()
 
-	// 2. Fetch blob (json mode)
+	// 3. Fetch the blob itself (json mode) and cache it locally.
 	blobURL := fmt.Sprintf("%s://%s/v2/%s/blobs/%s", proto, ci.Registry, ci.Repository, digest)
 	blobClient := &http.Client{Timeout: 120 * time.Second}
 	resp, err := network.DoWithRetry(blobClient, func() (*http.Request, error) {
