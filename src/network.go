@@ -423,7 +423,9 @@ func DeleteTag(tag, registry, repository, token string) error {
 	return remote.Delete(ref, remoteOpts...)
 }
 
-// GetProtocol determines http vs https protocol (useful for local mock registry tests)
+// GetProtocol chooses http for localhost/loopback registries (e.g. mock
+// registries used in tests, or a registry proxy on 127.0.0.1) and https for
+// everything else. It is used throughout the package, not only in tests.
 func GetProtocol(registry string) string {
 	host := registry
 	if h, _, err := net.SplitHostPort(registry); err == nil {

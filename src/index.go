@@ -157,8 +157,10 @@ func fetchCacheIndexWithDigest(registry, repository, token string) (*PushCacheIn
 	return existingIndex, manifestDigest, nil
 }
 
-func manifestSHA256(b []byte) string {
-	sum := sha256.Sum256(b)
+// manifestSHA256 computes the "sha256:<hex>" digest string for raw manifest
+// bytes, matching the OCI content-addressable digest format.
+func manifestSHA256(data []byte) string {
+	sum := sha256.Sum256(data)
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
@@ -220,7 +222,7 @@ func updateCacheIndexWithDigest(receipts []PushReceipt, existingIndex *PushCache
 	for _, r := range receipts {
 		r := r
 		eg.Go(func() error {
-			b, err := os.ReadFile(r.NarinfoPath)
+			narinfoBytes, err := os.ReadFile(r.NarinfoPath)
 			if err != nil {
 				return fmt.Errorf("failed to read narinfo (%s): %w", r.NarinfoPath, err)
 			}
@@ -231,12 +233,12 @@ func updateCacheIndexWithDigest(receipts []PushReceipt, existingIndex *PushCache
 				return nil
 			}
 			hash := parts[0]
-			name := parts[1]
+			storeName := parts[1]
 
 			mu.Lock()
 			newIndex.Entries[hash] = PushCacheEntry{
-				Name:      name,
-				Narinfo:   string(b),
+				Name:      storeName,
+				Narinfo:   string(narinfoBytes),
 				NarDigest: r.NarDigest,
 				NarSize:   r.NarSize,
 				Added:     newIndex.Generated,

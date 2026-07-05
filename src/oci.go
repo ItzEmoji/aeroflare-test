@@ -15,6 +15,10 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
+// withArtifactType wraps a v1.Image to inject an OCI ArtifactType into its
+// manifest. go-containerregistry's v1.Image has no setter for ArtifactType,
+// so this recomputes the manifest (and therefore Digest/Size, since both
+// depend on the manifest bytes) with the field set.
 type withArtifactType struct {
 	v1.Image
 	artifactType string
@@ -58,6 +62,8 @@ func (w *withArtifactType) Size() (int64, error) {
 	return int64(len(b)), nil
 }
 
+// ParseAeroflareMetadata converts a narinfo's "Key: value" lines into
+// lowercase "aeroflare.<key>" annotations suitable for an OCI manifest.
 func ParseAeroflareMetadata(content string) (map[string]string, error) {
 	annotations := make(map[string]string)
 	scanner := bufio.NewScanner(strings.NewReader(content))
@@ -84,6 +90,10 @@ func ParseAeroflareMetadata(content string) (map[string]string, error) {
 	return annotations, nil
 }
 
+// FetchAeroflareAnnotations fetches an OCI manifest by tag and returns its
+// annotations merged with its labels (labels are checked as a fallback for
+// registries/tools that surface metadata under "labels" instead). If token
+// is empty, it falls back to the default keychain for auth.
 func FetchAeroflareAnnotations(ctx context.Context, client *http.Client, registry, repository, tag, token string) (map[string]string, error) {
 	imageRef := fmt.Sprintf("%s/%s:%s", registry, repository, tag)
 	ref, err := name.ParseReference(imageRef)

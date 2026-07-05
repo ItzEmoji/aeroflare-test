@@ -11,12 +11,16 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// R2Backend uploads .narinfo files directly to R2 (nar blobs themselves are
+// assumed already in the R2 bucket) and records each nar as a layer in a
+// chunked series of OCI manifests, so GC tooling that walks manifest layers
+// can still see the blobs and won't treat them as orphaned.
 type R2Backend struct {
 	cfg BackendConfig
 }
 
 func (b *R2Backend) PushReceipts(ctx context.Context, receipts []PushReceipt) error {
-	client, err := b.cfg.R2.NewClient(ctx)
+	s3Client, err := b.cfg.R2.NewClient(ctx)
 	if err != nil {
 		return err
 	}
@@ -40,7 +44,7 @@ func (b *R2Backend) PushReceipts(ctx context.Context, receipts []PushReceipt) er
 		})
 
 		eg.Go(func() error {
-			return b.cfg.R2.UploadNarinfo(egCtx, client, r.StorePath, r.NarinfoPath)
+			return b.cfg.R2.UploadNarinfo(egCtx, s3Client, r.StorePath, r.NarinfoPath)
 		})
 	}
 
@@ -77,8 +81,8 @@ func (b *R2Backend) PushReceipts(ctx context.Context, receipts []PushReceipt) er
 		protocol := GetProtocol(b.cfg.Registry)
 		manifestURL := fmt.Sprintf("%s://%s/v2/%s/manifests/%s", protocol, b.cfg.Registry, b.cfg.Repository, chunkTag)
 
-		client := &http.Client{Timeout: 30 * time.Second}
-		resp, err := DoWithRetry(client, func() (*http.Request, error) {
+		httpClient := &http.Client{Timeout: 30 * time.Second}
+		resp, err := DoWithRetry(httpClient, func() (*http.Request, error) {
 			req, err := http.NewRequestWithContext(ctx, "PUT", manifestURL, bytes.NewReader(manifestBytes))
 			if err != nil {
 				return nil, err

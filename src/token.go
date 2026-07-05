@@ -136,6 +136,10 @@ func GetToken(registry, repository, explicitToken string) string {
 	return token // Fallback
 }
 
+// GetRegistryAndRepository derives the target registry and repository from
+// viper config / environment: an explicit cache-url (oci://registry/repo)
+// takes precedence, otherwise it falls back to a cache name and defaults the
+// repository to "<cache>/nix-cache". Exits the process if neither is set.
 func GetRegistryAndRepository() (string, string) {
 	registry := viper.GetString("registry")
 	if registry == "" {

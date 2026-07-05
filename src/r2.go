@@ -22,6 +22,10 @@ type R2Config struct {
 	PublicURL string
 }
 
+// GetR2Config builds an R2Config from environment variables, falling back to
+// the cache-config annotations (e.g. aeroflare.r2.bucket) when the
+// corresponding env var is unset. It returns nil when no bucket is
+// configured, signaling that the R2 backend is not in use.
 func GetR2Config(annotations map[string]string) *R2Config {
 	bucket := os.Getenv("R2_BUCKET")
 	if bucket == "" && annotations != nil {
@@ -58,6 +62,8 @@ func GetR2Config(annotations map[string]string) *R2Config {
 	}
 }
 
+// NewClient builds an S3 client for R2 using path-style addressing (R2
+// requires this rather than virtual-hosted-style bucket URLs).
 func (r *R2Config) NewClient(ctx context.Context) (*s3.Client, error) {
 	if r.AccessKey == "" || r.SecretKey == "" {
 		return nil, fmt.Errorf("R2 credentials missing: set R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY")
@@ -79,6 +85,8 @@ func (r *R2Config) NewClient(ctx context.Context) (*s3.Client, error) {
 	}), nil
 }
 
+// UploadNarinfo uploads the .narinfo file for storePath to R2, keyed by the
+// store hash (e.g. "<hash>.narinfo") so it can be looked up directly.
 func (r *R2Config) UploadNarinfo(ctx context.Context, client *s3.Client, storePath, narinfoPath string) error {
 	b, err := os.ReadFile(narinfoPath)
 	if err != nil {
