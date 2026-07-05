@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -40,6 +41,7 @@ Sig: `
 		t.Fatalf("Failed to create narinfo file: %v", err)
 	}
 
+	var mu sync.Mutex
 	var checkedBlob, pushedManifest bool
 
 	mockRegistry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -49,13 +51,17 @@ Sig: `
 		}
 
 		if r.Method == "HEAD" && strings.HasPrefix(r.URL.Path, "/v2/test-repo/blobs/") {
+			mu.Lock()
 			checkedBlob = true
+			mu.Unlock()
 			w.WriteHeader(http.StatusOK) // Simulate blob exists
 			return
 		}
 
 		if r.Method == "PUT" && strings.HasPrefix(r.URL.Path, "/v2/test-repo/manifests/") {
+			mu.Lock()
 			pushedManifest = true
+			mu.Unlock()
 			w.WriteHeader(http.StatusCreated)
 			return
 		}
@@ -77,7 +83,6 @@ Sig: `
 		{
 			StorePath:   "/nix/store/11111111111111111111111111111111-test",
 			NarinfoPath: narinfoPath,
-			NarPath:     narPath,
 			NarDigest:   "sha256:fake",
 			NarSize:     13,
 			IsRoot:      true,
