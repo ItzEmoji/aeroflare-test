@@ -1,3 +1,5 @@
+// Package run executes a command through a local Nix proxy substituter and
+// harvests the resulting store paths for caching or pushing.
 package run
 
 import (
@@ -14,10 +16,12 @@ import (
 	"aeroflare/src/ui"
 )
 
+// RunConfig holds the command line to be executed via the Nix proxy.
 type RunConfig struct {
 	Command []string
 }
 
+// DisplaySummary prints a formatted summary of the command that will be run.
 func DisplaySummary(cfg *RunConfig) {
 	cmdStr := strings.Join(cfg.Command, " ")
 	ui.PrintSummaryBox("Run Summary", []ui.BoxField{
@@ -26,9 +30,10 @@ func DisplaySummary(cfg *RunConfig) {
 	})
 }
 
-// buildNixConfig appends the proxy substituter to any existing NIX_CONFIG.
-// It deliberately does NOT set accept-flake-config: that would silently trust
-// substituters and keys defined by arbitrary flakes.
+// buildNixConfig appends the proxy substituter to any existing NIX_CONFIG value.
+// It deliberately does NOT set accept-flake-config, which would silently trust
+// substituters and keys defined by arbitrary flakes — a security risk when running
+// untrusted build scripts.
 func buildNixConfig(existing string, port int) string {
 	cfg := existing
 	if cfg != "" {
@@ -37,7 +42,11 @@ func buildNixConfig(existing string, port int) string {
 	return cfg + fmt.Sprintf("extra-substituters = http://127.0.0.1:%d", port)
 }
 
-// ExecuteCommand starts proxy, runs cmd, and returns harvested store paths
+// ExecuteCommand starts a proxy server, runs cfg.Command with the proxy
+// substituter set in NIX_CONFIG, captures stdout, and returns extracted Nix
+// store paths (lines starting with /nix/store/ and not prefixed with #).
+// The proxy is configured with the given registry, repository, indexDir, and
+// githubToken for cache interactions.
 func ExecuteCommand(cfg *RunConfig, registry, repository, indexDir, githubToken string) ([]string, error) {
 	if len(cfg.Command) == 0 {
 		return nil, fmt.Errorf("command is empty")
@@ -72,6 +81,8 @@ func ExecuteCommand(cfg *RunConfig, registry, repository, indexDir, githubToken 
 		return nil, fmt.Errorf("command failed: %w", err)
 	}
 
+	// Extract store paths from command output: split into lines, trim whitespace,
+	// skip empty lines and comments (#), and keep only lines starting with /nix/store/.
 	var targetPaths []string
 	lines := strings.Split(stdoutBuf.String(), "\n")
 	for _, line := range lines {
