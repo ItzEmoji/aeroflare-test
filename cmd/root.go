@@ -33,6 +33,10 @@ Use it as a proxy cache, or push/pull blobs directly to/from the registry.`,
 	},
 }
 
+// initConfig locates (or creates) aeroflare.yaml under XDG_CONFIG_HOME (or
+// ~/.config), wires it up as the Viper config file, and sets up the
+// AEROFLARE_* environment variable prefix. Registered as a Cobra
+// OnInitialize hook, so it runs once before any command's RunE/Run.
 func initConfig() {
 	configDir := os.Getenv("XDG_CONFIG_HOME")
 	if configDir == "" {
@@ -77,6 +81,9 @@ func initConfig() {
 	}
 }
 
+// GetCacheURL resolves the effective OCI cache URL: an explicit --cache-url
+// flag wins, otherwise a shorthand --cache "org/repo" value is expanded to
+// a ghcr.io URL. Returns "" if neither is set.
 func GetCacheURL() string {
 	if url := viper.GetString("cache-url"); url != "" {
 		return url
@@ -95,10 +102,11 @@ func Execute() {
 	}
 }
 
+// GetRootCmd returns the root Cobra command, mainly for use by the docs
+// generator (cmd/gen_docs).
 func GetRootCmd() *cobra.Command {
 	return rootCmd
 }
-
 
 func init() {
 	cobra.OnInitialize(initConfig)

@@ -8,6 +8,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Flag-backed vars for pushCmd, also reused by runCmd (see run.go) so both
+// commands share one set of push-related flags.
 var (
 	pushStorePath   string
 	pushInputFile   string
@@ -25,6 +27,8 @@ var pushCmd = &cobra.Command{
 	Short: "Push a build to the cache",
 	Run: func(cmd *cobra.Command, args []string) {
 		registry, _ := network.GetRegistryAndRepository()
+		// Called for its side effect: resolves and exports the registry token
+		// (oci_token / GITHUB_TOKEN) into the environment for downstream push steps.
 		getTokenForRegistry(registry)
 
 		cfg, err := push.ParseConfig(args, pushStorePath, pushInputFile, os.Stdin)

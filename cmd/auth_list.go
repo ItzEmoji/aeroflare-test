@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var authListJson bool
+var authListJSON bool
 
 var authListCmd = &cobra.Command{
 	Use:   "list",
@@ -21,7 +21,7 @@ var authListCmd = &cobra.Command{
 		manager := getSecretsManager()
 		keys, err := manager.List()
 		if err != nil {
-			if authListJson {
+			if authListJSON {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			} else {
 				PrintError(err.Error())
@@ -30,7 +30,7 @@ var authListCmd = &cobra.Command{
 		}
 		
 		if len(keys) == 0 {
-			if authListJson {
+			if authListJSON {
 				fmt.Println("[]")
 			} else {
 				fmt.Println("No credentials saved.")
@@ -38,13 +38,15 @@ var authListCmd = &cobra.Command{
 			return nil
 		}
 		
-		// Map to group OCI tokens
 		type Entry struct {
 			Service string `json:"service"`
 			Info    string `json:"info"`
 			Key     string `json:"key"`
 		}
 		var entries []Entry
+		// OCI credentials are stored as two separate keys per registry
+		// ("oci-<registry>-username" and "oci-<registry>-token"); collect them
+		// here keyed by registry so they can be merged into a single row below.
 		ociRegistries := make(map[string]map[string]string)
 
 		for _, key := range keys {
@@ -87,6 +89,9 @@ var authListCmd = &cobra.Command{
 			} else if key == "cf-user-id" {
 				entries = append(entries, Entry{Service: "Cloudflare", Info: "Account ID", Key: key})
 			} else if strings.HasPrefix(key, "oci-") {
+				// "oci-<registry>-<suffix>": the registry itself may contain
+				// hyphens (e.g. "oci-registry.gitlab.com-token"), so split off
+				// only the last "-"-delimited segment as the suffix.
 				parts := strings.Split(key, "-")
 				if len(parts) >= 3 {
 					registry := strings.Join(parts[1:len(parts)-1], "-")
@@ -124,7 +129,7 @@ var authListCmd = &cobra.Command{
 			entries = append(entries, Entry{Service: "OCI Registry", Info: info, Key: keyStr})
 		}
 
-		if authListJson {
+		if authListJSON {
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
 			if err := enc.Encode(entries); err != nil {
@@ -146,7 +151,7 @@ var authListCmd = &cobra.Command{
 }
 
 func init() {
-	authListCmd.Flags().BoolVar(&authListJson, "json", false, "Export credentials list as JSON")
+	authListCmd.Flags().BoolVar(&authListJSON, "json", false, "Export credentials list as JSON")
 }
 
 func getGithubUser(token string) (string, []string) {

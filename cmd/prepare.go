@@ -117,6 +117,9 @@ func init() {
 	rootCmd.AddCommand(prepareCmd)
 }
 
+// printResult prints a human-readable summary of one prepared store path:
+// its NAR/narinfo output locations, signing status, and any references
+// that were missing from (or newly prepared for) the upstream cache.
 func printResult(r *prepare.Result) {
 	fmt.Println("Prepared: " + r.StorePath)
 	fmt.Println("  NAR:     " + r.NarPath)

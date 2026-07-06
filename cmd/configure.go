@@ -33,6 +33,9 @@ var configureCmd = &cobra.Command{
 		token := getTokenForRegistry(registry)
 		tokenMgr := proxy.NewTokenManager(registry, repository, token)
 		remoteConf, existingAnnotations, _ := proxy.BootstrapConfigWithAnnotations(context.Background(), nil, registry, repository, tokenMgr)
+		// Prefill the form with whatever is already configured on the
+		// remote manifest, falling back to legacy annotation keys where the
+		// naming has changed over time.
 		if existingAnnotations != nil {
 			b := existingAnnotations["aeroflare.backend"]
 			if b != "" {

@@ -8,6 +8,9 @@ import (
 	"aeroflare/src/auth"
 )
 
+// isTerminal reports whether stdin is an interactive character device, used
+// to decide whether it's safe to launch an interactive auth prompt or
+// whether we should just fail with an actionable error message instead.
 func isTerminal() bool {
 	stat, err := os.Stdin.Stat()
 	if err != nil {
@@ -16,6 +19,10 @@ func isTerminal() bool {
 	return (stat.Mode() & os.ModeCharDevice) != 0
 }
 
+// RequireGithubToken resolves a GitHub token from (in order) the --github-token
+// flag, the secrets manager/environment, or an interactive device/manual auth
+// flow if stdin is a terminal. Exits the process if no token can be obtained
+// non-interactively.
 func RequireGithubToken() string {
 	if globalGithubToken != "" {
 		return globalGithubToken
@@ -39,6 +46,9 @@ func RequireGithubToken() string {
 	return ""
 }
 
+// RequireGitlabToken resolves a GitLab token the same way RequireGithubToken
+// resolves a GitHub token: flag, then secrets manager/environment, then an
+// interactive prompt if possible.
 func RequireGitlabToken() string {
 	if globalGitlabToken != "" {
 		return globalGitlabToken
@@ -62,6 +72,10 @@ func RequireGitlabToken() string {
 	return ""
 }
 
+// RequireCloudflareToken resolves the Cloudflare API token and account ID,
+// each independently from a flag, secrets manager, or matching env var
+// (CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID). If either is still missing
+// it falls back to an interactive prompt, or exits if not on a terminal.
 func RequireCloudflareToken() (string, string) {
 	apiToken := globalCfToken
 	if apiToken == "" {
@@ -101,6 +115,9 @@ func RequireCloudflareToken() (string, string) {
 	return "", ""
 }
 
+// GetOCIToken looks up a saved username/token pair for an arbitrary OCI
+// registry, without prompting. Returns empty strings for whichever half is
+// not found; use RequireOCIToken if an interactive fallback is wanted.
 func GetOCIToken(registry string) (string, string) {
 	user, errUser := auth.NewResolver(fmt.Sprintf("oci-%s-username", registry)).
 		WithSecretsManager(getSecretsManager()).
@@ -117,6 +134,10 @@ func GetOCIToken(registry string) (string, string) {
 	return user, pass
 }
 
+// RequireOCIToken returns a username/token pair for registry, prompting
+// interactively (via runInteractiveOCIAuth) if credentials aren't already
+// saved. Exits the process if credentials are missing and stdin isn't a
+// terminal.
 func RequireOCIToken(registry string) (string, string) {
 	user, pass := GetOCIToken(registry)
 	if user != "" && pass != "" {
@@ -133,6 +154,9 @@ func RequireOCIToken(registry string) (string, string) {
 	return "", ""
 }
 
+// getTokenForRegistry resolves (prompting interactively if needed) and
+// exports the token for registry into the process environment (oci_token,
+// plus GITHUB_TOKEN for ghcr.io) so downstream Nix/OCI tooling can pick it up.
 func getTokenForRegistry(registry string) string {
 	if registry == "ghcr.io" {
 		token := RequireGithubToken()
@@ -147,6 +171,9 @@ func getTokenForRegistry(registry string) string {
 	return ""
 }
 
+// getOptionalTokenForRegistry is like getTokenForRegistry but never prompts
+// or exits: it returns "" if no token is already saved, which lets the proxy
+// serve unauthenticated (public) registries without forcing a login.
 func getOptionalTokenForRegistry(registry string) string {
 	if registry == "" {
 		return ""

@@ -60,7 +60,9 @@ var authImportCmd = &cobra.Command{
 			}
 		}
 
-		// 3. Docker CLI
+		// 3. Docker CLI. `docker login` stores one base64("user:pass") blob per
+		// registry host in ~/.docker/config.json; decode each and import it as
+		// an OCI username/token pair for that registry.
 		homeDir, err := os.UserHomeDir()
 		if err == nil {
 			dockerConfigPath := filepath.Join(homeDir, ".docker", "config.json")

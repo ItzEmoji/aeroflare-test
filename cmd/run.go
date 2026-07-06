@@ -38,7 +38,8 @@ var runCmd = &cobra.Command{
 
 		fmt.Printf("\nFound %d store paths to push from run command output.\n", len(targetPaths))
 
-		// Trigger Push
+		// Feed the discovered store paths straight into the push pipeline,
+		// reusing push's own flags (registered below) for compression, workers, etc.
 		pushCfg := &push.PushConfig{
 			TargetPaths: targetPaths,
 			Compression: pushCompression,
@@ -67,7 +68,8 @@ var runCmd = &cobra.Command{
 }
 
 func init() {
-	// Re-use push flags
+	// These flags bind to the same package-level vars as pushCmd (see push.go),
+	// so `aeroflare run` and `aeroflare push` share identical push behavior.
 	runCmd.Flags().StringVar(&pushCompression, "compression", "zstd", "Compression type: zstd, xz, gzip, none")
 	runCmd.Flags().StringVar(&pushCacheURL, "upstream-cache", "https://cache.nixos.org", "Upstream binary cache URL")
 	runCmd.Flags().IntVar(&pushWorkers, "workers", 50, "Number of concurrent workers")

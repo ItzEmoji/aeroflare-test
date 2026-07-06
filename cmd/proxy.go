@@ -21,6 +21,9 @@ var proxyCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		registry, repository := network.GetRegistryAndRepository()
 
+		// Settings below are read from NIXCACHE_* env vars rather than flags so
+		// the proxy can be configured the same way whether it's run directly
+		// or deployed as a systemd service / container.
 		port := 37515
 		if pStr := os.Getenv("NIXCACHE_PORT"); pStr != "" {
 			if p, err := strconv.Atoi(pStr); err == nil {
@@ -52,6 +55,8 @@ var proxyCmd = &cobra.Command{
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
+		// Cancel the proxy's context on SIGINT/SIGTERM so StartProxy can shut
+		// down its listener cleanly instead of the process being killed mid-request.
 		c := make(chan os.Signal, 1)
 		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 		go func() {
@@ -75,6 +80,10 @@ func init() {
 	rootCmd.AddCommand(proxyCmd)
 }
 
+// getIndexDir picks a directory for the proxy's local index cache, checking
+// (in order) AEROFLARE_INDEX_DIR, the legacy NIXCACHE_INDEX_DIR, the
+// systemd-provided CACHE_DIRECTORY, and finally a per-repository directory
+// under the user's home cache dir (or the OS temp dir if that's unavailable).
 func getIndexDir(repository string) string {
 	indexDir := os.Getenv("AEROFLARE_INDEX_DIR")
 	if indexDir == "" {

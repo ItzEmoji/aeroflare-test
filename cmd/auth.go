@@ -58,7 +58,8 @@ var authLoginCmd = &cobra.Command{
 	},
 }
 
-// (authListCmd has been moved to auth_list.go)
+// authListCmd is defined in auth_list.go; it's registered alongside the
+// other auth subcommands in the init() below.
 
 var authRemoveCmd = &cobra.Command{
 	Use:   "remove [key]",

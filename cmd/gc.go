@@ -61,6 +61,8 @@ var gcCmd = &cobra.Command{
 
 		PrintSuccess(fmt.Sprintf("Garbage collection freed %d bytes.", result.FreedBytes))
 
+		// Only push the updated index if GC actually removed something;
+		// an unchanged index isn't worth a round trip to the registry.
 		if result.FreedBytes > 0 {
 			tokenMgr := proxy.NewTokenManager(registry, repository, "")
 			_, configAnnotations, _ := proxy.BootstrapConfigWithAnnotations(context.Background(), nil, registry, repository, tokenMgr)
