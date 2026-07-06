@@ -139,6 +139,98 @@ func TestProxyServerEndpoints(t *testing.T) {
 	}
 }
 
+// TestProxyServer_ServeNativeNarinfo reconstructs a narinfo from a native-mode
+// OCI manifest whose metadata is carried in aeroflare.* manifest annotations
+// (the keys the push side actually writes). Regression test for the proxy
+// previously reading vnd.aeroflare.nar.* keys, which never matched.
+func TestProxyServer_ServeNativeNarinfo(t *testing.T) {
+	const storeHash = "xn2nlmvng2im9mgrq46y3wkbz4ll1hnp"
+
+	mockRegistry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/token" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"token": "native-token"}`))
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/manifests/"+storeHash) {
+			w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{
+				"schemaVersion": 2,
+				"mediaType": "application/vnd.oci.image.manifest.v1+json",
+				"config": {"digest": "sha256:0f17530206d5378c1c5d4b08ff9ec7556468da4e64d0d60ef219c8b308d2f291"},
+				"layers": [
+					{"mediaType": "application/vnd.aeroflare.nar.v1+zstd", "digest": "sha256:b0078e30265597a3e2fc42d1d10c9f14ba0462f0c8bf969ff5fc18b7323bcbb7", "size": 12790065}
+				],
+				"annotations": {
+					"aeroflare.narsize": "20202056",
+					"aeroflare.storepath": "/nix/store/xn2nlmvng2im9mgrq46y3wkbz4ll1hnp-snacks-nvim-e6fd58c8",
+					"aeroflare.narhash": "sha256:06v4v63xc818bc4csj49ri30my24hmpddhr2a2452q7jm10ijaim",
+					"aeroflare.url": "nar/xn2nlmvng2im9mgrq46y3wkbz4ll1hnp.nar.zst",
+					"aeroflare.compression": "zstd",
+					"aeroflare.deriver": "74n7dgfk6y0xgsy4qrlxbfpa429f259g-snacks-nvim-e6fd58c8.drv",
+					"aeroflare.filehash": "sha256:1dyb7crbf67wyngrdgy8y1i09fhlkw6d3la2zkia75sm4qq8w1xh",
+					"aeroflare.references": "",
+					"aeroflare.filesize": "12790065"
+				}
+			}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer mockRegistry.Close()
+
+	reg := strings.TrimPrefix(mockRegistry.URL, "http://")
+
+	cacheIndex := &CacheIndex{
+		Data:                &CacheIndexData{Entries: map[string]IndexEntry{}},
+		NarLookups:          map[string]string{},
+		ManifestAnnotations: map[string]string{"aeroflare.backend": "native"},
+		LastFetch:           time.Now(),
+		IndexTTL:            5 * time.Minute,
+	}
+
+	ps := &ProxyServer{
+		Registry:        reg,
+		Repository:      "itzemoji2/cache-3",
+		CacheIndex:      cacheIndex,
+		TokenMgr:        NewTokenManager(reg, "itzemoji2/cache-3", ""),
+		HttpClient:      &http.Client{Timeout: 30 * time.Second},
+		HttpShortClient: &http.Client{Timeout: 10 * time.Second},
+		UpstreamCaches:  []string{},
+	}
+
+	req := httptest.NewRequest("GET", "/"+storeHash+".narinfo", nil)
+	w := httptest.NewRecorder()
+	ps.Handler(w, req)
+	resp := w.Result()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Expected 200 for native narinfo, got %d", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "text/x-nix-narinfo" {
+		t.Errorf("Expected Content-Type text/x-nix-narinfo, got %s", ct)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	got := string(body)
+
+	wants := []string{
+		"StorePath: /nix/store/xn2nlmvng2im9mgrq46y3wkbz4ll1hnp-snacks-nvim-e6fd58c8\n",
+		"URL: nar/xn2nlmvng2im9mgrq46y3wkbz4ll1hnp.nar.zst\n",
+		"Compression: zstd\n",
+		"FileHash: sha256:1dyb7crbf67wyngrdgy8y1i09fhlkw6d3la2zkia75sm4qq8w1xh\n",
+		"FileSize: 12790065\n",
+		"NarHash: sha256:06v4v63xc818bc4csj49ri30my24hmpddhr2a2452q7jm10ijaim\n",
+		"NarSize: 20202056\n",
+		"Deriver: 74n7dgfk6y0xgsy4qrlxbfpa429f259g-snacks-nvim-e6fd58c8.drv\n",
+	}
+	for _, want := range wants {
+		if !strings.Contains(got, want) {
+			t.Errorf("narinfo missing %q\nfull body:\n%s", want, got)
+		}
+	}
+}
+
 func TestBootstrapConfig(t *testing.T) {
 	mockRegistry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

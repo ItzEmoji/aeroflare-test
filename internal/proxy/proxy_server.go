@@ -295,9 +295,9 @@ func (ps *ProxyServer) serveNar(w http.ResponseWriter, r *http.Request, path str
 }
 
 // serveNativeNarinfo reconstructs a narinfo file from the OCI manifest tagged
-// with storeHash (native mode): the vnd.aeroflare.nar.* fields are read from
-// the manifest's annotations/labels, falling back to the image config's
-// labels via fetchConfigLabels if the manifest itself doesn't carry them.
+// with storeHash (native mode): the aeroflare.* fields are read from the
+// manifest's annotations/labels, falling back to the image config's labels
+// via fetchConfigLabels if the manifest itself doesn't carry them.
 func (ps *ProxyServer) serveNativeNarinfo(w http.ResponseWriter, r *http.Request, storeHash string) error {
 	proto := oci.GetProtocol(ps.Registry)
 	manifestURL := fmt.Sprintf("%s://%s/v2/%s/manifests/%s", proto, ps.Registry, ps.Repository, storeHash)
@@ -334,9 +334,9 @@ func (ps *ProxyServer) serveNativeNarinfo(w http.ResponseWriter, r *http.Request
 
 	var labels map[string]string
 
-	if manifest.Annotations != nil && manifest.Annotations["vnd.aeroflare.nar.storepath"] != "" {
+	if manifest.Annotations != nil && manifest.Annotations["aeroflare.storepath"] != "" {
 		labels = manifest.Annotations
-	} else if manifest.Labels != nil && manifest.Labels["vnd.aeroflare.nar.storepath"] != "" {
+	} else if manifest.Labels != nil && manifest.Labels["aeroflare.storepath"] != "" {
 		labels = manifest.Labels
 	} else if manifest.Config.Digest != "" {
 		configLabels, err := ps.fetchConfigLabels(r.Context(), manifest.Config.Digest)
@@ -350,31 +350,31 @@ func (ps *ProxyServer) serveNativeNarinfo(w http.ResponseWriter, r *http.Request
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "StorePath: %s\n", labels["vnd.aeroflare.nar.storepath"])
-	fmt.Fprintf(&b, "URL: %s\n", labels["vnd.aeroflare.nar.url"])
-	fmt.Fprintf(&b, "Compression: %s\n", labels["vnd.aeroflare.nar.compression"])
-	fmt.Fprintf(&b, "FileHash: %s\n", labels["vnd.aeroflare.nar.filehash"])
-	fmt.Fprintf(&b, "FileSize: %s\n", labels["vnd.aeroflare.nar.filesize"])
-	fmt.Fprintf(&b, "NarHash: %s\n", labels["vnd.aeroflare.nar.narhash"])
-	fmt.Fprintf(&b, "NarSize: %s\n", labels["vnd.aeroflare.nar.narsize"])
+	fmt.Fprintf(&b, "StorePath: %s\n", labels["aeroflare.storepath"])
+	fmt.Fprintf(&b, "URL: %s\n", labels["aeroflare.url"])
+	fmt.Fprintf(&b, "Compression: %s\n", labels["aeroflare.compression"])
+	fmt.Fprintf(&b, "FileHash: %s\n", labels["aeroflare.filehash"])
+	fmt.Fprintf(&b, "FileSize: %s\n", labels["aeroflare.filesize"])
+	fmt.Fprintf(&b, "NarHash: %s\n", labels["aeroflare.narhash"])
+	fmt.Fprintf(&b, "NarSize: %s\n", labels["aeroflare.narsize"])
 
-	if rStr, ok := labels["vnd.aeroflare.nar.references"]; ok && rStr != "" {
+	if rStr, ok := labels["aeroflare.references"]; ok && rStr != "" {
 		fmt.Fprintf(&b, "References: %s\n", rStr)
 	} else {
 		b.WriteString("References:\n")
 	}
 
-	if deriver, ok := labels["vnd.aeroflare.nar.deriver"]; ok && deriver != "" {
+	if deriver, ok := labels["aeroflare.deriver"]; ok && deriver != "" {
 		fmt.Fprintf(&b, "Deriver: %s\n", deriver)
 	} else {
 		b.WriteString("Deriver:\n")
 	}
 
-	if system, ok := labels["vnd.aeroflare.nar.system"]; ok && system != "" {
+	if system, ok := labels["aeroflare.system"]; ok && system != "" {
 		fmt.Fprintf(&b, "System: %s\n", system)
 	}
 
-	if sig, ok := labels["vnd.aeroflare.nar.sig"]; ok && sig != "" {
+	if sig, ok := labels["aeroflare.sig"]; ok && sig != "" {
 		fmt.Fprintf(&b, "Sig: %s\n", sig)
 	}
 
