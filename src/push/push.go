@@ -320,6 +320,14 @@ func RunPush(plan *PushPlan) error {
 			ociToken = t
 		}
 
+		// Build a single authenticated pusher for the whole chunk so all
+		// concurrent layer uploads share one registry auth handshake instead
+		// of each repeating the /v2/ 401 challenge and token exchange.
+		pusher, repo, err := network.NewLayerPusher(registry, repository, ociToken)
+		if err != nil {
+			return fmt.Errorf("failed to create registry pusher: %v", err)
+		}
+
 		var mu sync.Mutex
 		receiptsByPath := make(map[string]network.PushReceipt)
 		var chunkFailed []string
@@ -365,7 +373,7 @@ func RunPush(plan *PushPlan) error {
 				}
 
 				// Simply push the layer and collect receipt.
-				if err := network.PushLayer(layer, registry, repository, ociToken); err != nil {
+				if err := pusher.Upload(ctx, repo, layer); err != nil {
 					fail("failed to push NAR layer", err)
 					return nil
 				}
@@ -420,6 +428,7 @@ func RunPush(plan *PushPlan) error {
 				PubKeyPath:        plan.Config.SigningKey,
 				ConfigAnnotations: configAnnotations,
 				R2:                r2Cfg,
+				Workers:           plan.Config.Workers,
 			})
 			if err := backend.PushReceipts(ctx, chunkReceipts); err != nil {
 				return fmt.Errorf("backend push failed: %v", err)

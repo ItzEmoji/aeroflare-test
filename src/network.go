@@ -199,6 +199,47 @@ func PushLayer(layer v1.Layer, registry, repository, token string) error {
 	return remote.WriteLayer(repo, layer, remoteOpts...)
 }
 
+// newPusher builds a remote.Pusher that authenticates once and can be reused
+// across many Upload/Push calls, so a batch of concurrent operations shares a
+// single registry auth handshake instead of repeating the /v2/ 401 challenge
+// and token exchange each time.
+func newPusher(token string) (*remote.Pusher, error) {
+	remoteOpts := []remote.Option{
+		remote.WithTransport(optimizedTransport),
+	}
+	if token != "" {
+		remoteOpts = append(remoteOpts, remote.WithAuth(&authn.Bearer{Token: token}))
+	}
+	return remote.NewPusher(remoteOpts...)
+}
+
+// NewLayerPusher returns a shared pusher plus the target repository to pass to
+// pusher.Upload, for uploading many NAR layers under one auth handshake.
+func NewLayerPusher(registry, repository, token string) (*remote.Pusher, name.Repository, error) {
+	opts := []name.Option{}
+	if GetProtocol(registry) == "http" {
+		opts = append(opts, name.Insecure)
+	}
+
+	repoStr := fmt.Sprintf("%s/%s", registry, repository)
+	repo, err := name.NewRepository(repoStr, opts...)
+	if err != nil {
+		return nil, name.Repository{}, err
+	}
+
+	pusher, err := newPusher(token)
+	if err != nil {
+		return nil, name.Repository{}, err
+	}
+	return pusher, repo, nil
+}
+
+// NewImagePusher returns a shared pusher for pushing per-package OCI images via
+// PushNarPackageWith, so a batch of image pushes shares one auth handshake.
+func NewImagePusher(token string) (*remote.Pusher, error) {
+	return newPusher(token)
+}
+
 // PullBlob fetches a blob from any OCI registry and writes it to outFile.
 // repository should be the full repository path (e.g. "itzemoji/nix-cache-test/nix-cache")
 func PullBlob(digest, outFile, registry, repository, token string) error {
@@ -245,6 +286,18 @@ func PullBlob(digest, outFile, registry, repository, token string) error {
 // O(1) Lookup Tagging Rule: The tag passed to this function MUST strictly be the 32-character Nix hash
 // (e.g., xn2nlmvng2im9mgrq46y3wkbz4ll1hnp) to ensure O(1) lookups during pulls later.
 func PushNarPackage(layer v1.Layer, ni *narinfo.Narinfo, tag, registry, repository, token string) error {
+	pusher, err := newPusher(token)
+	if err != nil {
+		return err
+	}
+	return PushNarPackageWith(context.Background(), pusher, layer, ni, tag, registry, repository)
+}
+
+// PushNarPackageWith builds the per-package OCI image and pushes it with a
+// caller-supplied shared pusher, so a batch of packages reuses one auth
+// handshake instead of re-authenticating per image. See PushNarPackage for the
+// O(1)-lookup tagging rule that tag must follow.
+func PushNarPackageWith(ctx context.Context, pusher *remote.Pusher, layer v1.Layer, ni *narinfo.Narinfo, tag, registry, repository string) error {
 	// Create Image
 	img := mutate.MediaType(empty.Image, types.OCIManifestSchema1)
 	img = mutate.ConfigMediaType(img, types.OCIConfigJSON)
@@ -282,14 +335,7 @@ func PushNarPackage(layer v1.Layer, ni *narinfo.Narinfo, tag, registry, reposito
 		return err
 	}
 
-	remoteOpts := []remote.Option{
-		remote.WithTransport(optimizedTransport),
-	}
-	if token != "" {
-		remoteOpts = append(remoteOpts, remote.WithAuth(&authn.Bearer{Token: token}))
-	}
-
-	return remote.Write(ref, finalNarImg, remoteOpts...)
+	return pusher.Push(ctx, ref, finalNarImg)
 }
 
 // PullOCINativeManifest pulls the OCI image manifest by tag (e.g., <nix-hash>)

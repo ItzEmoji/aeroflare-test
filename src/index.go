@@ -166,13 +166,15 @@ func manifestSHA256(data []byte) string {
 
 // UpdateCacheIndex merges new entries into existingIndex and pushes the updated manifest.
 func UpdateCacheIndex(receipts []PushReceipt, existingIndex *PushCacheIndex, registry, repository, token, pubKeyPath string, configAnnotations map[string]string) error {
-	_, err := updateCacheIndexWithDigest(receipts, existingIndex, registry, repository, token, pubKeyPath, configAnnotations)
+	_, err := updateCacheIndexWithDigest(receipts, existingIndex, registry, repository, token, pubKeyPath, configAnnotations, 0)
 	return err
 }
 
 // updateCacheIndexWithDigest does the merge+push and returns the digest of the
 // manifest it wrote, so callers can detect concurrent writers afterwards.
-func updateCacheIndexWithDigest(receipts []PushReceipt, existingIndex *PushCacheIndex, registry, repository, token, pubKeyPath string, configAnnotations map[string]string) (string, error) {
+// workers bounds how many receipts are merged concurrently; if <= 0 it falls
+// back to a default limit.
+func updateCacheIndexWithDigest(receipts []PushReceipt, existingIndex *PushCacheIndex, registry, repository, token, pubKeyPath string, configAnnotations map[string]string, workers int) (string, error) {
 
 	if reg, err := name.NewRegistry(registry); err == nil {
 		registry = reg.RegistryStr()
@@ -217,7 +219,7 @@ func updateCacheIndexWithDigest(receipts []PushReceipt, existingIndex *PushCache
 	newEntriesCount := 0
 	var mu sync.Mutex
 	var eg errgroup.Group
-	eg.SetLimit(20)
+	eg.SetLimit(workerLimit(workers, 20))
 
 	for _, r := range receipts {
 		r := r

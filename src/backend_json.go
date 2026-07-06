@@ -28,7 +28,7 @@ func (b *JSONBackend) PushReceipts(ctx context.Context, receipts []PushReceipt) 
 			return fmt.Errorf("failed to fetch existing index: %w", err)
 		}
 
-		writtenDigest, err := updateCacheIndexWithDigest(receipts, existingIndex, b.cfg.Registry, b.cfg.Repository, b.cfg.Token, b.cfg.PubKeyPath, b.cfg.ConfigAnnotations)
+		writtenDigest, err := updateCacheIndexWithDigest(receipts, existingIndex, b.cfg.Registry, b.cfg.Repository, b.cfg.Token, b.cfg.PubKeyPath, b.cfg.ConfigAnnotations, b.cfg.Workers)
 		if err != nil {
 			return err
 		}

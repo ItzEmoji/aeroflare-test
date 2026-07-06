@@ -23,8 +23,15 @@ type NativeBackend struct {
 // as an independent OCI image; a failure on one receipt does not stop the
 // others already in flight but is still returned to the caller.
 func (b *NativeBackend) PushReceipts(ctx context.Context, receipts []PushReceipt) error {
+	// One shared pusher so all package image pushes reuse a single registry
+	// auth handshake instead of each repeating the /v2/ 401 challenge.
+	pusher, err := NewImagePusher(b.cfg.Token)
+	if err != nil {
+		return fmt.Errorf("failed to create registry pusher: %w", err)
+	}
+
 	eg, _ := errgroup.WithContext(ctx)
-	eg.SetLimit(5)
+	eg.SetLimit(workerLimit(b.cfg.Workers, 5))
 
 	for _, receipt := range receipts {
 		receipt := receipt
@@ -54,7 +61,7 @@ func (b *NativeBackend) PushReceipts(ctx context.Context, receipts []PushReceipt
 			basename := filepath.Base(ni.StorePath)
 			tag := strings.SplitN(basename, "-", 2)[0]
 
-			err = PushNarPackage(layer, ni, tag, b.cfg.Registry, b.cfg.Repository, b.cfg.Token)
+			err = PushNarPackageWith(ctx, pusher, layer, ni, tag, b.cfg.Registry, b.cfg.Repository)
 			if err != nil {
 				return fmt.Errorf("failed to push native artifact (%s): %w", receipt.StorePath, err)
 			}

@@ -19,6 +19,16 @@ type BackendConfig struct {
 	PubKeyPath        string
 	ConfigAnnotations map[string]string
 	R2                *R2Config
+	Workers           int
+}
+
+// workerLimit returns cfg.Workers if positive, otherwise def; used by backend
+// implementations to size their concurrency instead of hardcoding a limit.
+func workerLimit(workers, def int) int {
+	if workers > 0 {
+		return workers
+	}
+	return def
 }
 
 // NewCacheBackend selects a CacheBackend based on cfg: an R2 config with a

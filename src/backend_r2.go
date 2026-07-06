@@ -26,7 +26,7 @@ func (b *R2Backend) PushReceipts(ctx context.Context, receipts []PushReceipt) er
 	}
 
 	eg, egCtx := errgroup.WithContext(ctx)
-	eg.SetLimit(10)
+	eg.SetLimit(workerLimit(b.cfg.Workers, 10))
 
 	var layers []map[string]interface{}
 
