@@ -2,7 +2,6 @@ package auth
 
 import (
 	"errors"
-	"fmt"
 	"os"
 
 	"aeroflare/internal/secrets"
@@ -84,17 +83,23 @@ func (r *Resolver) Resolve() (string, error) {
 	return "", ErrTokenNotFound
 }
 
+// managerOrDefault returns the first manager in mgrs, or nil (which resolution
+// treats as "use the default secrets manager"). It lets the variadic
+// convenience resolvers below accept an optional manager override for tests.
+func managerOrDefault(mgrs []secrets.Manager) secrets.Manager {
+	if len(mgrs) > 0 {
+		return mgrs[0]
+	}
+	return nil
+}
+
 // ResolveGithubToken resolves a GitHub credential from (in priority order)
 // the GITHUB_TOKEN or GH_TOKEN environment variables, then the secrets
 // manager under the "github-token" key. An optional secrets.Manager may be
-// passed to override the default (used by tests).
+// passed to override the default (used by tests). The credential's sources are
+// declared once, in the catalog (service.go).
 func ResolveGithubToken(mgrs ...secrets.Manager) (string, error) {
-	resolver := NewResolver("github-token").
-		WithEnv("GITHUB_TOKEN", "GH_TOKEN")
-	if len(mgrs) > 0 {
-		resolver = resolver.WithSecretsManager(mgrs[0])
-	}
-	return resolver.Resolve()
+	return githubService.Fields[0].Resolve(managerOrDefault(mgrs))
 }
 
 // ResolveGitlabToken resolves a GitLab credential from the GITLAB_TOKEN
@@ -102,31 +107,19 @@ func ResolveGithubToken(mgrs ...secrets.Manager) (string, error) {
 // key. An optional secrets.Manager may be passed to override the default
 // (used by tests).
 func ResolveGitlabToken(mgrs ...secrets.Manager) (string, error) {
-	resolver := NewResolver("gitlab-token").
-		WithEnv("GITLAB_TOKEN")
-	if len(mgrs) > 0 {
-		resolver = resolver.WithSecretsManager(mgrs[0])
-	}
-	return resolver.Resolve()
+	return gitlabService.Fields[0].Resolve(managerOrDefault(mgrs))
 }
 
-// ResolveRegistryToken resolves a credential for the given OCI registry
-// hostname. Well-known registries (ghcr.io, registry.gitlab.com) delegate to
-// their dedicated resolvers above; any other registry falls back to a
-// generic resolver keyed on "oci-<registry>-token", which also honors an
-// "oci_token" environment variable override.
+// ResolveRegistryToken resolves the token used to authenticate to the given
+// OCI registry hostname. The registry-to-service mapping (ghcr.io -> GitHub,
+// registry.gitlab.com -> GitLab, anything else -> a generic "oci-<host>-token"
+// credential honoring the "oci_token" env var) is defined by the catalog's
+// ServiceForRegistry. An optional secrets.Manager overrides the default.
 func ResolveRegistryToken(registry string, mgrs ...secrets.Manager) (string, error) {
-	switch registry {
-	case "ghcr.io":
-		return ResolveGithubToken(mgrs...)
-	case "registry.gitlab.com":
-		return ResolveGitlabToken(mgrs...)
+	svc := ServiceForRegistry(registry)
+	tokenField, ok := svc.Field("token")
+	if !ok {
+		return "", ErrTokenNotFound
 	}
-	// Use WithEnv here in case an explicit oci_token is provided for generic registries.
-	resolver := NewResolver(fmt.Sprintf("oci-%s-token", registry)).
-		WithEnv("oci_token")
-	if len(mgrs) > 0 {
-		resolver = resolver.WithSecretsManager(mgrs[0])
-	}
-	return resolver.Resolve()
+	return tokenField.Resolve(managerOrDefault(mgrs))
 }
