@@ -220,12 +220,17 @@ func PrepareBatch(ctx context.Context, storePaths []string, cfg *Config) ([]*Res
 	return results, nil
 }
 
+// batchResult carries the outcome of preparing one store path back from a
+// worker goroutine, tagged with its original index so results can be placed
+// in input order.
 type batchResult struct {
 	idx    int
 	result *Result
 	err    error
 }
 
+// gatherPathInfos fetches store.PathInfo for each path concurrently using the
+// given number of workers, returning a map keyed by store path.
 func gatherPathInfos(ctx context.Context, paths []string, workers int) (map[string]*store.PathInfo, error) {
 	type infoResult struct {
 		path string
@@ -272,6 +277,9 @@ func gatherPathInfos(ctx context.Context, paths []string, workers int) (map[stri
 	return infos, nil
 }
 
+// collectReferenceHashes gathers the deduplicated set of hash parts across
+// all references found in infos, along with a map back from hash to the
+// full reference store path.
 func collectReferenceHashes(infos map[string]*store.PathInfo) ([]string, map[string]string) {
 	seen := make(map[string]bool)
 	var hashes []string
@@ -293,6 +301,9 @@ func collectReferenceHashes(infos map[string]*store.PathInfo) ([]string, map[str
 	return hashes, hashToPath
 }
 
+// checkRefBatch checks existence of the given hashes on the upstream cache
+// configured in cfg. If no cache URL is configured or there are no hashes to
+// check, it returns an empty map (meaning: treat everything as unknown).
 func checkRefBatch(ctx context.Context, hashes []string, cfg *Config) (map[string]bool, error) {
 	if cfg.CacheURL == "" || len(hashes) == 0 {
 		return make(map[string]bool), nil
@@ -302,6 +313,8 @@ func checkRefBatch(ctx context.Context, hashes []string, cfg *Config) (map[strin
 	return c.ExistsBatch(ctx, hashes, cfg.Workers)
 }
 
+// checkReferences checks the given references against the upstream cache and
+// returns the subset that are missing (not present on the cache).
 func checkReferences(ctx context.Context, references []string, cfg *Config) ([]string, error) {
 	if len(references) == 0 {
 		return nil, nil
@@ -326,6 +339,9 @@ func checkReferences(ctx context.Context, references []string, cfg *Config) ([]s
 	return computeMissingRefs(references, existsMap, hashToPath), nil
 }
 
+// computeMissingRefs filters references down to those not present in
+// existsMap. If existsMap is empty (no cache was configured to check
+// against), every reference is treated as missing.
 func computeMissingRefs(references []string, existsMap map[string]bool, hashToPath map[string]string) []string {
 	if len(existsMap) == 0 {
 		// No cache configured: all references are "missing"
@@ -485,6 +501,9 @@ func writeNarsFromInfos(paths []string, infos map[string]*store.PathInfo, cfg *C
 	return results, nil
 }
 
+// writeNarAndNarinfo dumps storePath as a NAR, compresses and hashes it, then
+// writes both the compressed NAR file and its accompanying .narinfo file to
+// cfg.OutputDir. It returns the paths to the two written files.
 func writeNarAndNarinfo(storePath, pathHash string, info *store.PathInfo, cfg *Config) (string, string, error) {
 	if err := os.MkdirAll(cfg.OutputDir, 0o755); err != nil {
 		return "", "", fmt.Errorf("create output dir: %w", err)

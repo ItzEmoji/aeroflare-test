@@ -54,6 +54,8 @@ func ParseType(s string) (Type, error) {
 	}
 }
 
+// countingWriter wraps an io.Writer and tracks the number of bytes written
+// through it.
 type countingWriter struct {
 	w io.Writer
 	n int64
@@ -65,6 +67,8 @@ func (cw *countingWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
+// nopWriteCloser adapts an io.Writer to io.WriteCloser with a no-op Close.
+// Used for the None compression type, which has nothing to flush.
 type nopWriteCloser struct {
 	io.Writer
 }

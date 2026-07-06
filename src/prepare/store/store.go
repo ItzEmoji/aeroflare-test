@@ -50,6 +50,7 @@ func (b *LegacyStoreBackend) Closure(paths []string) ([]string, error) {
 	return refs, nil
 }
 
+// pathInfoJSON mirrors the JSON shape produced by `nix path-info --json`.
 type pathInfoJSON struct {
 	Path       string   `json:"path"`
 	References []string `json:"references"`
@@ -136,6 +137,8 @@ func (b *LegacyStoreBackend) PathInfo(paths []string) ([]PathInfo, error) {
 	return results, nil
 }
 
+// getPathInfoLegacy populates references and deriver for a single path using
+// the older nix-store commands, for use when `nix path-info` is unavailable.
 func getPathInfoLegacy(path string, info *PathInfo) error {
 	// Get references
 	cmd := exec.Command("nix-store", "-q", "--references", path)
@@ -163,6 +166,8 @@ func getPathInfoLegacy(path string, info *PathInfo) error {
 	return nil
 }
 
+// dumpReadCloser wraps the stdout pipe of a `nix-store --dump` subprocess so
+// that Close also waits for the process to exit, preventing zombies.
 type dumpReadCloser struct {
 	io.ReadCloser
 	cmd *exec.Cmd

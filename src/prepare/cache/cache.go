@@ -111,6 +111,8 @@ func (c *Cache) Exists(ctx context.Context, hash string) (bool, error) {
 	return exists, nil
 }
 
+// checkRemote issues a HEAD request for the narinfo and interprets the
+// response status as existence.
 func (c *Cache) checkRemote(ctx context.Context, hash string) (bool, error) {
 	url := fmt.Sprintf("%s/%s.narinfo", c.baseURL, hash)
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)

@@ -5,8 +5,12 @@ import (
 	"fmt"
 )
 
+// base32Chars is the Nix base32 alphabet, omitting e, o, t, u to avoid
+// visual ambiguity.
 const base32Chars = "0123456789abcdfghijklmnpqrsvwxyz"
 
+// base32Index maps each byte value to its index in base32Chars, or 0xFF if
+// the byte is not a valid base32 character. Built once in init.
 var base32Index [256]byte
 
 func init() {
