@@ -5,67 +5,69 @@ import (
 	"strings"
 )
 
-// ANSI color codes
+// ANSI color codes for terminal output.
 const (
-	colorGray  = "\x1b[90m"
-	colorCyan  = "\x1b[36m"
-	colorReset = "\x1b[0m"
+	colorGray  = "\x1b[90m"  // Gray for borders and separators
+	colorCyan  = "\x1b[36m"  // Cyan for column headers
+	colorReset = "\x1b[0m"   // Reset to default color
 )
 
-// PrintTable prints a beautiful Nushell-style table.
+// PrintTable prints a formatted table with borders, headers, and rows.
+// Columns are auto-sized to fit the widest content in each column.
 func PrintTable(headers []string, rows [][]string) {
 	if len(headers) == 0 {
 		return
 	}
 
-	// Calculate column widths
-	colWidths := make([]int, len(headers))
-	for i, h := range headers {
-		colWidths[i] = len(h)
+	// Calculate the width needed for each column based on headers and data.
+	columnWidths := make([]int, len(headers))
+	for i, header := range headers {
+		columnWidths[i] = len(header)
 	}
 
 	for _, row := range rows {
 		for i, cell := range row {
-			if i < len(colWidths) && len(cell) > colWidths[i] {
-				colWidths[i] = len(cell)
+			if i < len(columnWidths) && len(cell) > columnWidths[i] {
+				columnWidths[i] = len(cell)
 			}
 		}
 	}
 
-	// Helper to draw horizontal lines
+	// drawLine constructs a horizontal line with the given junction characters
+	// and fill character, properly sized for each column.
 	drawLine := func(left, mid, right, fill string) string {
-		parts := make([]string, len(colWidths))
-		for i, w := range colWidths {
-			parts[i] = strings.Repeat(fill, w+2)
+		columnSeparators := make([]string, len(columnWidths))
+		for i, columnWidth := range columnWidths {
+			columnSeparators[i] = strings.Repeat(fill, columnWidth+2)
 		}
-		return colorGray + left + strings.Join(parts, mid) + right + colorReset
+		return colorGray + left + strings.Join(columnSeparators, mid) + right + colorReset
 	}
 
 	// Top border
 	fmt.Println("  " + drawLine("╭", "┬", "╮", "─"))
 
-	// Headers
+	// Print column headers with cyan highlighting
 	fmt.Print("  " + colorGray + "│" + colorReset)
-	for i, h := range headers {
-		fmt.Printf(" " + colorCyan + "%-*s" + colorReset + " " + colorGray + "│" + colorReset, colWidths[i], h)
+	for i, header := range headers {
+		fmt.Printf(" " + colorCyan + "%-*s" + colorReset + " " + colorGray + "│" + colorReset, columnWidths[i], header)
 	}
 	fmt.Println()
 
 	// Header separator
 	fmt.Println("  " + drawLine("├", "┼", "┤", "─"))
 
-	// Rows
+	// Print table rows, padding cells to match column widths
 	for _, row := range rows {
 		fmt.Print("  " + colorGray + "│" + colorReset)
 		for i, cell := range row {
-			w := colWidths[i]
-			if i < len(colWidths) {
-				fmt.Printf(" %-*s " + colorGray + "│" + colorReset, w, cell)
+			columnWidth := columnWidths[i]
+			if i < len(columnWidths) {
+				fmt.Printf(" %-*s " + colorGray + "│" + colorReset, columnWidth, cell)
 			}
 		}
-		// In case row has fewer elements than headers
+		// Pad with empty cells if row has fewer columns than headers
 		for i := len(row); i < len(headers); i++ {
-			fmt.Printf(" %-*s " + colorGray + "│" + colorReset, colWidths[i], "")
+			fmt.Printf(" %-*s " + colorGray + "│" + colorReset, columnWidths[i], "")
 		}
 		fmt.Println()
 	}

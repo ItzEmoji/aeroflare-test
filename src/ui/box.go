@@ -5,42 +5,46 @@ import (
 	"strings"
 )
 
+// BoxField represents a single label-value pair to be displayed in a box.
 type BoxField struct {
 	Label string
 	Value string
 }
 
+// PrintSummaryBox prints a formatted box with a title and label-value pairs.
+// The box is auto-sized to fit the title and all fields.
 func PrintSummaryBox(title string, fields []BoxField) {
-	maxLabel := 0
-	for _, f := range fields {
-		if len(f.Label) > maxLabel {
-			maxLabel = len(f.Label)
+	maxLabelLen := 0
+	for _, field := range fields {
+		if len(field.Label) > maxLabelLen {
+			maxLabelLen = len(field.Label)
 		}
 	}
 
-	maxWidth := len(title)
-	for _, f := range fields {
-		lineLen := maxLabel + 1 + 1 + len(f.Value)
-		if lineLen > maxWidth {
-			maxWidth = lineLen
+	maxContentWidth := len(title)
+	for _, field := range fields {
+		// Width is: label + colon + space + value
+		fieldLineWidth := maxLabelLen + 1 + 1 + len(field.Value)
+		if fieldLineWidth > maxContentWidth {
+			maxContentWidth = fieldLineWidth
 		}
 	}
 
-	width := maxWidth + 4
+	boxWidth := maxContentWidth + 4
 
-	horizontal := strings.Repeat("─", width)
+	horizontalLine := strings.Repeat("─", boxWidth)
 
 	fmt.Println()
-	fmt.Printf("  ╭%s╮\n", horizontal)
-	fmt.Printf("  │  %-*s  │\n", width-4, title)
-	fmt.Printf("  ├%s┤\n", horizontal)
+	fmt.Printf("  ╭%s╮\n", horizontalLine)
+	fmt.Printf("  │  %-*s  │\n", boxWidth-4, title)
+	fmt.Printf("  ├%s┤\n", horizontalLine)
 
-	for _, f := range fields {
-		labelStr := f.Label + ":"
-		remaining := width - 4 - (maxLabel + 2)
-		fmt.Printf("  │  %-*s %-*s  │\n", maxLabel+1, labelStr, remaining, f.Value)
+	for _, field := range fields {
+		labelStr := field.Label + ":"
+		valueColumnWidth := boxWidth - 4 - (maxLabelLen + 2)
+		fmt.Printf("  │  %-*s %-*s  │\n", maxLabelLen+1, labelStr, valueColumnWidth, field.Value)
 	}
 
-	fmt.Printf("  ╰%s╯\n", horizontal)
+	fmt.Printf("  ╰%s╯\n", horizontalLine)
 	fmt.Println()
 }
