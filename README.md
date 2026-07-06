@@ -42,15 +42,19 @@ nix run github:ItzEmoji/aeroflare -- run -- nix build .#default --print-out-path
 │   ├── proxy.go        # Proxy CLI command definition
 │   ├── run.go          # CLI command for build wrapper
 │   └── ...             # Settings, auth, gc, and clean-index CLI commands
-├── src/                # Core logic packages (decoupled from Cobra/CLI)
+├── internal/           # Core logic packages (decoupled from Cobra/CLI)
+│   ├── oci/            # OCI registry transport: layers, pushers, auth, retry
+│   ├── r2/             # Cloudflare R2 / S3 client
+│   ├── cacheindex/     # JSON cache-index schema, update logic, and GC
+│   ├── backend/        # CacheBackend abstraction + JSON/native/R2 implementations
 │   ├── auth/           # OAuth token flows, Device authorization
 │   ├── secrets/        # Credentials manager (keyring + plaintext fallback)
 │   ├── proxy/          # HTTP server, proxy handlers, token management
 │   ├── prepare/        # Local NAR serialization, compression, and signing
-│   ├── network.go      # OCI network layer (uses go-containerregistry)
-│   ├── index.go        # JSON cache-index schema and update logic
-│   ├── r2.go           # Cloudflare R2 / S3 client integration
-│   └── gc.go           # BFS-based garbage collection algorithm
+│   ├── push/           # Push pipeline (prepare -> backend publish)
+│   ├── run/            # `aeroflare run` build wrapper
+│   ├── init/           # Interactive provisioning wizards
+│   └── ui/             # Shared terminal UI components
 └── docs/               # Docusaurus documentation website
 ```
 

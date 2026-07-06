@@ -3,7 +3,7 @@ package cmd
 import (
 	"os"
 
-	setup "aeroflare/src/init"
+	setup "aeroflare/internal/init"
 
 	"github.com/spf13/cobra"
 )
@@ -39,7 +39,7 @@ any changes. No infrastructure is created until you confirm.`,
 			_ = os.Setenv("CLOUDFLARE_API_TOKEN", cfToken)
 			_ = os.Setenv("CLOUDFLARE_ACCOUNT_ID", cfID)
 		}
-		
+
 		// Ensure Github token exists if they need GitHub Actions / Registry
 		if cfg.Registry == "ghcr.io" || cfg.GitProvider == setup.GitGitHub {
 			ghToken := RequireGithubToken()

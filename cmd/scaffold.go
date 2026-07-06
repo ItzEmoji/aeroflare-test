@@ -1,14 +1,13 @@
 package cmd
 
 import (
+	"aeroflare/internal/oci"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"strings"
-
-	network "aeroflare/src"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
@@ -174,7 +173,7 @@ func patchWranglerToml(proxyDir, indexType string) {
 
 	// Try from the network package if env vars are set.
 	if registry == "" || repository == "" {
-		r, repo := network.GetRegistryAndRepository()
+		r, repo := oci.GetRegistryAndRepository()
 		if registry == "" {
 			registry = r
 		}

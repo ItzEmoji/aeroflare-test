@@ -3,8 +3,9 @@ package cmd
 import (
 	"os"
 
-	network "aeroflare/src"
-	"aeroflare/src/push"
+	"aeroflare/internal/oci"
+	"aeroflare/internal/push"
+
 	"github.com/spf13/cobra"
 )
 
@@ -26,7 +27,7 @@ var pushCmd = &cobra.Command{
 	Use:   "push",
 	Short: "Push a build to the cache",
 	Run: func(cmd *cobra.Command, args []string) {
-		registry, _ := network.GetRegistryAndRepository()
+		registry, _ := oci.GetRegistryAndRepository()
 		// Called for its side effect: resolves and exports the registry token
 		// (oci_token / GITHUB_TOKEN) into the environment for downstream push steps.
 		getTokenForRegistry(registry)

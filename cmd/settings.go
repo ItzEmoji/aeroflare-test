@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"aeroflare/src/init"
+	setup "aeroflare/internal/init"
+
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -33,7 +34,7 @@ var settingsCmd = &cobra.Command{
 		if theme == "" {
 			theme = "default"
 		}
-		
+
 		cloudflareToken = viper.GetString("cloudflare-api-token")
 		gitProvider = viper.GetString("git-provider")
 		if gitProvider == "" {

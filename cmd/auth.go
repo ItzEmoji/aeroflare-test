@@ -2,8 +2,9 @@ package cmd
 
 import (
 	"fmt"
-	
-	"aeroflare/src/secrets"
+
+	"aeroflare/internal/secrets"
+
 	"github.com/spf13/cobra"
 )
 
@@ -27,7 +28,7 @@ var authLoginCmd = &cobra.Command{
 	Short: "Authenticate interactively",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		manager := getSecretsManager()
-		
+
 		tokens := []struct {
 			key string
 			val string
@@ -50,7 +51,7 @@ var authLoginCmd = &cobra.Command{
 				savedAny = true
 			}
 		}
-		
+
 		if !savedAny {
 			runInteractiveAuth()
 		}

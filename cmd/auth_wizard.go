@@ -1,8 +1,9 @@
 package cmd
 
 import (
+	"aeroflare/internal/auth"
 	"fmt"
-	"aeroflare/src/auth"
+
 	"github.com/charmbracelet/huh"
 )
 
@@ -38,7 +39,7 @@ func runInteractiveGithubAuth() string {
 		}
 		fmt.Printf("Please go to %s and enter the code: %s\n", res.VerificationURI, res.UserCode)
 		fmt.Println("Waiting for authorization...")
-		
+
 		token, err = auth.PollAccessToken(githubClientID, res.DeviceCode, res.Interval)
 		if err != nil {
 			PrintError(fmt.Sprintf("Authorization failed: %v", err))
@@ -50,7 +51,7 @@ func runInteractiveGithubAuth() string {
 			return ""
 		}
 	}
-	
+
 	if token != "" {
 		if err := manager.Set("github-token", token); err != nil {
 			PrintError(fmt.Sprintf("Failed to save token: %v", err))
@@ -119,7 +120,7 @@ func runInteractiveCloudflareAuth() (string, string) {
 func runInteractiveOCIAuth(registry string) (string, string) {
 	manager := getSecretsManager()
 	var user, pass string
-	
+
 	if registry == "" {
 		err := huh.NewInput().Title("Registry URL (e.g. registry.gitlab.com)").Value(&registry).Run()
 		if err != nil || registry == "" {
@@ -129,7 +130,7 @@ func runInteractiveOCIAuth(registry string) (string, string) {
 
 	err := huh.NewForm(
 		huh.NewGroup(
-			huh.NewInput().Title("Username for " + registry).Value(&user),
+			huh.NewInput().Title("Username for "+registry).Value(&user),
 			huh.NewInput().Title("Token / Password").EchoMode(huh.EchoModePassword).Value(&pass),
 		),
 	).Run()
@@ -166,7 +167,7 @@ func runInteractiveAuth() {
 		).
 		Value(&service).
 		Run()
-		
+
 	if err != nil {
 		PrintError("Cancelled")
 		return

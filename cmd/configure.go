@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	network "aeroflare/src"
-	"aeroflare/src/proxy"
+	"aeroflare/internal/cacheindex"
+	"aeroflare/internal/oci"
+	"aeroflare/internal/proxy"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
@@ -16,8 +17,8 @@ var configureCmd = &cobra.Command{
 	Use:   "configure",
 	Short: "Interactively configure cache backend and settings",
 	Run: func(cmd *cobra.Command, args []string) {
-		registry, repository := network.GetRegistryAndRepository()
-		ociToken := network.GetToken(registry, repository, "")
+		registry, repository := oci.GetRegistryAndRepository()
+		ociToken := oci.GetToken(registry, repository, "")
 		if ociToken == "" {
 			PrintError("Authentication token missing (oci_token, GITHUB_TOKEN or GH_TOKEN)")
 			os.Exit(1)
@@ -131,7 +132,7 @@ var configureCmd = &cobra.Command{
 		}
 
 		annotations := map[string]string{
-			"aeroflare.backend": backend,
+			"aeroflare.backend":    backend,
 			"aeroflare.public-key": publicKey,
 		}
 
@@ -144,7 +145,7 @@ var configureCmd = &cobra.Command{
 
 		PrintInfo("Saving configuration to OCI manifest annotations...")
 
-		err = network.PushConfigManifest(registry, repository, ociToken, annotations)
+		err = cacheindex.PushConfigManifest(registry, repository, ociToken, annotations)
 		if err != nil {
 			PrintError(fmt.Sprintf("Failed to save config: %v", err))
 			os.Exit(1)
@@ -152,7 +153,7 @@ var configureCmd = &cobra.Command{
 
 		if backend != "json" {
 			// If switching away from json backend, try to untag cache-index image
-			_ = network.DeleteTag("cache-index", registry, repository, ociToken)
+			_ = oci.DeleteTag("cache-index", registry, repository, ociToken)
 		}
 
 		PrintSuccess("Configuration successfully saved to cache-config manifest!")

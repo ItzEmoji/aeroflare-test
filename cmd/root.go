@@ -1,11 +1,11 @@
 package cmd
 
 import (
+	"aeroflare/internal/oci"
 	"os"
 	"path/filepath"
 	"strings"
 
-	network "aeroflare/src"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -28,7 +28,7 @@ Aeroflare allows you to seamlessly cache Nix binaries into an OCI registry
 (like GitHub Packages), speeding up your CI/CD pipelines and local builds.
 Use it as a proxy cache, or push/pull blobs directly to/from the registry.`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		network.DebugLogger = (VerboseCount >= 2)
+		oci.DebugLogger = (VerboseCount >= 2)
 		cacheURL = GetCacheURL()
 	},
 }
@@ -51,7 +51,7 @@ func initConfig() {
 		configDir = filepath.Join(homeDir, ".config")
 	}
 	aeroDir := filepath.Join(configDir, "aeroflare")
-	
+
 	if err := os.MkdirAll(aeroDir, 0755); err != nil {
 		PrintError("Could not create config directory: " + err.Error())
 	} else {
@@ -112,11 +112,11 @@ func init() {
 	cobra.OnInitialize(initConfig)
 	rootCmd.PersistentFlags().CountVarP(&VerboseCount, "verbose", "v", "Enable verbose output (-v for packages, -vv for requests)")
 	rootCmd.PersistentFlags().StringVar(&cacheURL, "cache-url", "", "OCI registry URL for the cache")
-	
+
 	rootCmd.PersistentFlags().StringVar(&globalGithubToken, "github-token", "", "GitHub Token")
 	rootCmd.PersistentFlags().StringVar(&globalGitlabToken, "gitlab-token", "", "GitLab Token")
 	rootCmd.PersistentFlags().StringVar(&globalCfToken, "cf-token", "", "Cloudflare API Token")
 	rootCmd.PersistentFlags().StringVar(&globalCfUserID, "cf-user-id", "", "Cloudflare Account ID")
-	
+
 	_ = viper.BindPFlag("cache-url", rootCmd.PersistentFlags().Lookup("cache-url"))
 }

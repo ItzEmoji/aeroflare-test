@@ -10,8 +10,9 @@ import (
 	"strings"
 	"syscall"
 
-	network "aeroflare/src"
-	"aeroflare/src/proxy"
+	"aeroflare/internal/oci"
+	"aeroflare/internal/proxy"
+
 	"github.com/spf13/cobra"
 )
 
@@ -19,7 +20,7 @@ var proxyCmd = &cobra.Command{
 	Use:   "proxy",
 	Short: "Start the cache proxy server",
 	Run: func(cmd *cobra.Command, args []string) {
-		registry, repository := network.GetRegistryAndRepository()
+		registry, repository := oci.GetRegistryAndRepository()
 
 		// Settings below are read from NIXCACHE_* env vars rather than flags so
 		// the proxy can be configured the same way whether it's run directly

@@ -1,11 +1,12 @@
 package cmd
 
 import (
+	"aeroflare/internal/secrets"
 	"bytes"
 	"errors"
 	"testing"
+
 	"github.com/spf13/cobra"
-	"aeroflare/src/secrets"
 )
 
 type mockManager struct {

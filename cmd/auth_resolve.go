@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"aeroflare/src/auth"
+	"aeroflare/internal/auth"
 )
 
 // isTerminal reports whether stdin is an interactive character device, used
@@ -27,7 +27,7 @@ func RequireGithubToken() string {
 	if globalGithubToken != "" {
 		return globalGithubToken
 	}
-	
+
 	token, err := auth.ResolveGithubToken(getSecretsManager())
 	if err != nil && !errors.Is(err, auth.ErrTokenNotFound) {
 		fmt.Fprintf(os.Stderr, "Warning: failed to read token from keychain: %v\n", err)
@@ -35,12 +35,12 @@ func RequireGithubToken() string {
 	if token != "" {
 		return token
 	}
-	
+
 	if isTerminal() {
 		fmt.Println("GitHub token is required but not found. Launching authentication...")
 		return runInteractiveGithubAuth()
 	}
-	
+
 	PrintError("GitHub token required. Please set GITHUB_TOKEN or run 'aeroflare auth login'.")
 	os.Exit(1)
 	return ""
@@ -53,7 +53,7 @@ func RequireGitlabToken() string {
 	if globalGitlabToken != "" {
 		return globalGitlabToken
 	}
-	
+
 	token, err := auth.ResolveGitlabToken(getSecretsManager())
 	if err != nil && !errors.Is(err, auth.ErrTokenNotFound) {
 		fmt.Fprintf(os.Stderr, "Warning: failed to read token from keychain: %v\n", err)
@@ -61,12 +61,12 @@ func RequireGitlabToken() string {
 	if token != "" {
 		return token
 	}
-	
+
 	if isTerminal() {
 		fmt.Println("GitLab token is required but not found. Launching authentication...")
 		return runInteractiveGitlabAuth()
 	}
-	
+
 	PrintError("GitLab token required. Please set GITLAB_TOKEN or run 'aeroflare auth login'.")
 	os.Exit(1)
 	return ""
@@ -88,7 +88,7 @@ func RequireCloudflareToken() (string, string) {
 			fmt.Fprintf(os.Stderr, "Warning: failed to read token from keychain: %v\n", err)
 		}
 	}
-	
+
 	userID := globalCfUserID
 	if userID == "" {
 		var err error
@@ -100,16 +100,16 @@ func RequireCloudflareToken() (string, string) {
 			fmt.Fprintf(os.Stderr, "Warning: failed to read token from keychain: %v\n", err)
 		}
 	}
-	
+
 	if apiToken != "" && userID != "" {
 		return apiToken, userID
 	}
-	
+
 	if isTerminal() {
 		fmt.Println("Cloudflare credentials required but incomplete. Launching authentication...")
 		return runInteractiveCloudflareAuth()
 	}
-	
+
 	PrintError("Cloudflare credentials required. Please set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID, or run 'aeroflare auth login'.")
 	os.Exit(1)
 	return "", ""
@@ -143,12 +143,12 @@ func RequireOCIToken(registry string) (string, string) {
 	if user != "" && pass != "" {
 		return user, pass
 	}
-	
+
 	if isTerminal() {
 		fmt.Printf("Credentials for registry %s are required. Launching authentication...\n", registry)
 		return runInteractiveOCIAuth(registry)
 	}
-	
+
 	PrintError(fmt.Sprintf("Credentials required for registry %s. Run 'aeroflare auth login' to set them.", registry))
 	os.Exit(1)
 	return "", ""

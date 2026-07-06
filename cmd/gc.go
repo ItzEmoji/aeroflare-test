@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	network "aeroflare/src"
-	"aeroflare/src/proxy"
+	"aeroflare/internal/cacheindex"
+	"aeroflare/internal/oci"
+	"aeroflare/internal/proxy"
+
 	"github.com/spf13/cobra"
 )
 
@@ -21,15 +23,15 @@ var gcCmd = &cobra.Command{
 	Use:   "gc",
 	Short: "Garbage collect the cache",
 	Run: func(cmd *cobra.Command, args []string) {
-		registry, repository := network.GetRegistryAndRepository()
-		ociToken := network.GetToken(registry, repository, "")
+		registry, repository := oci.GetRegistryAndRepository()
+		ociToken := oci.GetToken(registry, repository, "")
 		if ociToken == "" {
 			PrintError("oci_token, GITHUB_TOKEN or GH_TOKEN environment variable is required")
 			os.Exit(1)
 		}
 
 		PrintInfo("Fetching remote index...")
-		index, err := network.FetchCacheIndex(registry, repository, ociToken)
+		index, err := cacheindex.FetchCacheIndex(registry, repository, ociToken)
 		if err != nil {
 			PrintError(fmt.Sprintf("Failed to fetch remote index: %v", err))
 			os.Exit(1)
@@ -43,7 +45,7 @@ var gcCmd = &cobra.Command{
 		}
 
 		PrintInfo("Running garbage collection...")
-		result := network.RunGC(index, maxFreed)
+		result := cacheindex.RunGC(index, maxFreed)
 
 		if printLive {
 			fmt.Println("Live Paths:")
@@ -68,7 +70,7 @@ var gcCmd = &cobra.Command{
 			_, configAnnotations, _ := proxy.BootstrapConfigWithAnnotations(context.Background(), nil, registry, repository, tokenMgr)
 
 			PrintInfo("Pushing updated remote index...")
-			err = network.UpdateCacheIndex(nil, index, registry, repository, ociToken, "", configAnnotations)
+			err = cacheindex.UpdateCacheIndex(nil, index, registry, repository, ociToken, "", configAnnotations)
 			if err != nil {
 				PrintError(fmt.Sprintf("Failed to push updated remote index: %v", err))
 				os.Exit(1)

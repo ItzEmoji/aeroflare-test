@@ -6,8 +6,10 @@ import (
 	"os"
 	"strings"
 
-	network "aeroflare/src"
-	"aeroflare/src/proxy"
+	"aeroflare/internal/cacheindex"
+	"aeroflare/internal/oci"
+	"aeroflare/internal/proxy"
+
 	"github.com/spf13/cobra"
 )
 
@@ -15,7 +17,7 @@ var cleanIndexCmd = &cobra.Command{
 	Use:   "clean-index",
 	Short: "Completely wipe the remote index on the registry",
 	Run: func(cmd *cobra.Command, args []string) {
-		registry, repository := network.GetRegistryAndRepository()
+		registry, repository := oci.GetRegistryAndRepository()
 
 		fmt.Print("Are you sure you want to completely wipe the remote index on the registry? [y/N]: ")
 		var response string
@@ -26,14 +28,14 @@ var cleanIndexCmd = &cobra.Command{
 			return
 		}
 
-		ociToken := network.GetToken(registry, repository, "")
+		ociToken := oci.GetToken(registry, repository, "")
 		if ociToken == "" {
 			PrintError("oci_token, GITHUB_TOKEN or GH_TOKEN environment variable is required")
 			os.Exit(1)
 		}
 
-		emptyIndex := &network.PushCacheIndex{
-			Entries: make(map[string]network.PushCacheEntry),
+		emptyIndex := &cacheindex.PushCacheIndex{
+			Entries: make(map[string]cacheindex.PushCacheEntry),
 			GCRoots: []string{},
 		}
 
@@ -41,7 +43,7 @@ var cleanIndexCmd = &cobra.Command{
 		_, configAnnotations, _ := proxy.BootstrapConfigWithAnnotations(context.Background(), nil, registry, repository, tokenMgr)
 
 		PrintInfo("Wiping remote index...")
-		err := network.UpdateCacheIndex(nil, emptyIndex, registry, repository, ociToken, "", configAnnotations)
+		err := cacheindex.UpdateCacheIndex(nil, emptyIndex, registry, repository, ociToken, "", configAnnotations)
 		if err != nil {
 			PrintError(fmt.Sprintf("Failed to wipe remote index: %v", err))
 			os.Exit(1)

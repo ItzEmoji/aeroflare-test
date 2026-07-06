@@ -6,19 +6,19 @@ import (
 	"os"
 	"path/filepath"
 
-	"aeroflare/src/prepare/compress"
-	"aeroflare/src/prepare/prepare"
-	"aeroflare/src/prepare/signing"
+	"aeroflare/internal/prepare/compress"
+	"aeroflare/internal/prepare/prepare"
+	"aeroflare/internal/prepare/signing"
 
 	"github.com/spf13/cobra"
 )
 
 var (
-	storePath   string
-	inputFile   string
-	outputDir   string
-	compression string
-	workers     int
+	storePath     string
+	inputFile     string
+	outputDir     string
+	compression   string
+	workers       int
 	prepareRefs   bool
 	signingKey    string
 	upstreamCache string

@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"os"
 
-	network "aeroflare/src"
-	"aeroflare/src/push"
-	"aeroflare/src/run"
+	"aeroflare/internal/oci"
+	"aeroflare/internal/push"
+	"aeroflare/internal/run"
+
 	"github.com/spf13/cobra"
 )
 
@@ -15,7 +16,7 @@ var runCmd = &cobra.Command{
 	Short: "Run a command with proxy substituter and push the output paths",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		registry, repository := network.GetRegistryAndRepository()
+		registry, repository := oci.GetRegistryAndRepository()
 		indexDir := getIndexDir(repository)
 
 		cfg := &run.RunConfig{

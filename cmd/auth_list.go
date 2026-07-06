@@ -8,7 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"aeroflare/src/ui"
+	"aeroflare/internal/ui"
+
 	"github.com/spf13/cobra"
 )
 
@@ -28,7 +29,7 @@ var authListCmd = &cobra.Command{
 			}
 			return err
 		}
-		
+
 		if len(keys) == 0 {
 			if authListJSON {
 				fmt.Println("[]")
@@ -37,7 +38,7 @@ var authListCmd = &cobra.Command{
 			}
 			return nil
 		}
-		
+
 		type Entry struct {
 			Service string `json:"service"`
 			Info    string `json:"info"`
@@ -111,7 +112,7 @@ var authListCmd = &cobra.Command{
 		for reg, data := range ociRegistries {
 			info := "Unknown"
 			keyStr := ""
-			
+
 			if userKey, ok := data["username"]; ok {
 				user, _ := manager.Get(userKey)
 				info = "Username: " + user + " (" + reg + ")"
@@ -125,7 +126,7 @@ var authListCmd = &cobra.Command{
 					keyStr = tokenKey
 				}
 			}
-			
+
 			entries = append(entries, Entry{Service: "OCI Registry", Info: info, Key: keyStr})
 		}
 
