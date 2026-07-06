@@ -2,6 +2,8 @@ package ui
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"strings"
 )
 
@@ -12,9 +14,15 @@ const (
 	colorReset = "\x1b[0m"  // Reset to default color
 )
 
-// PrintTable prints a formatted table with borders, headers, and rows.
-// Columns are auto-sized to fit the widest content in each column.
+// PrintTable prints a formatted table with borders, headers, and rows to
+// stdout. Columns are auto-sized to fit the widest content in each column.
 func PrintTable(headers []string, rows [][]string) {
+	PrintTableTo(os.Stdout, headers, rows)
+}
+
+// PrintTableTo prints a formatted table with borders, headers, and rows to w.
+// Columns are auto-sized to fit the widest content in each column.
+func PrintTableTo(w io.Writer, headers []string, rows [][]string) {
 	if len(headers) == 0 {
 		return
 	}
@@ -44,34 +52,34 @@ func PrintTable(headers []string, rows [][]string) {
 	}
 
 	// Top border
-	fmt.Println("  " + drawLine("╭", "┬", "╮", "─"))
+	fmt.Fprintln(w, "  "+drawLine("╭", "┬", "╮", "─"))
 
 	// Print column headers with cyan highlighting
-	fmt.Print("  " + colorGray + "│" + colorReset)
+	fmt.Fprint(w, "  "+colorGray+"│"+colorReset)
 	for i, header := range headers {
-		fmt.Printf(" "+colorCyan+"%-*s"+colorReset+" "+colorGray+"│"+colorReset, columnWidths[i], header)
+		fmt.Fprintf(w, " "+colorCyan+"%-*s"+colorReset+" "+colorGray+"│"+colorReset, columnWidths[i], header)
 	}
-	fmt.Println()
+	fmt.Fprintln(w)
 
 	// Header separator
-	fmt.Println("  " + drawLine("├", "┼", "┤", "─"))
+	fmt.Fprintln(w, "  "+drawLine("├", "┼", "┤", "─"))
 
 	// Print table rows, padding cells to match column widths
 	for _, row := range rows {
-		fmt.Print("  " + colorGray + "│" + colorReset)
+		fmt.Fprint(w, "  "+colorGray+"│"+colorReset)
 		for i, cell := range row {
 			columnWidth := columnWidths[i]
 			if i < len(columnWidths) {
-				fmt.Printf(" %-*s "+colorGray+"│"+colorReset, columnWidth, cell)
+				fmt.Fprintf(w, " %-*s "+colorGray+"│"+colorReset, columnWidth, cell)
 			}
 		}
 		// Pad with empty cells if row has fewer columns than headers
 		for i := len(row); i < len(headers); i++ {
-			fmt.Printf(" %-*s "+colorGray+"│"+colorReset, columnWidths[i], "")
+			fmt.Fprintf(w, " %-*s "+colorGray+"│"+colorReset, columnWidths[i], "")
 		}
-		fmt.Println()
+		fmt.Fprintln(w)
 	}
 
 	// Bottom border
-	fmt.Println("  " + drawLine("╰", "┴", "╯", "─"))
+	fmt.Fprintln(w, "  "+drawLine("╰", "┴", "╯", "─"))
 }
