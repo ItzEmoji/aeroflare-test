@@ -152,6 +152,28 @@ func runInteractiveOCIAuth(registry string) (string, string) {
 	return user, pass
 }
 
+// promptServiceFields interactively prompts for each of a service's fields,
+// masking input for secret fields, and returns the entered values keyed by
+// field Name. It is the catalog-driven prompt used by `auth set <service>`
+// when no values are given on the command line.
+func promptServiceFields(svc auth.Service) map[string]string {
+	vals := make(map[string]string)
+	for _, f := range svc.Fields {
+		var val string
+		input := huh.NewInput().Title(f.Label).Value(&val)
+		if f.Secret {
+			input = input.EchoMode(huh.EchoModePassword)
+		}
+		if err := input.Run(); err != nil {
+			return vals
+		}
+		if val != "" {
+			vals[f.Name] = val
+		}
+	}
+	return vals
+}
+
 // runInteractiveAuth is the entry point for `aeroflare auth login` when no
 // token flags were passed: it asks which service to authenticate and
 // dispatches to the matching runInteractive*Auth helper.

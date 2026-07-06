@@ -77,28 +77,16 @@ func RequireGitlabToken() string {
 // (CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID). If either is still missing
 // it falls back to an interactive prompt, or exits if not on a terminal.
 func RequireCloudflareToken() (string, string) {
+	cf, _ := auth.ServiceByID("cloudflare")
+
 	apiToken := globalCfToken
 	if apiToken == "" {
-		var err error
-		apiToken, err = auth.NewResolver("cf-token").
-			WithEnv("CLOUDFLARE_API_TOKEN").
-			WithSecretsManager(getSecretsManager()).
-			Resolve()
-		if err != nil && !errors.Is(err, auth.ErrTokenNotFound) {
-			fmt.Fprintf(os.Stderr, "Warning: failed to read token from keychain: %v\n", err)
-		}
+		apiToken = resolveField(cf, "token")
 	}
 
 	userID := globalCfUserID
 	if userID == "" {
-		var err error
-		userID, err = auth.NewResolver("cf-user-id").
-			WithEnv("CLOUDFLARE_ACCOUNT_ID").
-			WithSecretsManager(getSecretsManager()).
-			Resolve()
-		if err != nil && !errors.Is(err, auth.ErrTokenNotFound) {
-			fmt.Fprintf(os.Stderr, "Warning: failed to read token from keychain: %v\n", err)
-		}
+		userID = resolveField(cf, "account_id")
 	}
 
 	if apiToken != "" && userID != "" {
@@ -119,19 +107,24 @@ func RequireCloudflareToken() (string, string) {
 // registry, without prompting. Returns empty strings for whichever half is
 // not found; use RequireOCIToken if an interactive fallback is wanted.
 func GetOCIToken(registry string) (string, string) {
-	user, errUser := auth.NewResolver(fmt.Sprintf("oci-%s-username", registry)).
-		WithSecretsManager(getSecretsManager()).
-		Resolve()
-	if errUser != nil && !errors.Is(errUser, auth.ErrTokenNotFound) {
-		fmt.Fprintf(os.Stderr, "Warning: failed to read token from keychain: %v\n", errUser)
+	svc := auth.ServiceForRegistry(registry)
+	return resolveField(svc, "username"), resolveField(svc, "token")
+}
+
+// resolveField resolves a single named field of a service from the environment
+// and the secrets manager, returning "" if it is unset. A read error other
+// than "not found" is reported to stderr, matching the tolerant behavior the
+// callers below rely on. Fields the service does not declare resolve to "".
+func resolveField(svc auth.Service, name string) string {
+	field, ok := svc.Field(name)
+	if !ok {
+		return ""
 	}
-	pass, errPass := auth.NewResolver(fmt.Sprintf("oci-%s-token", registry)).
-		WithSecretsManager(getSecretsManager()).
-		Resolve()
-	if errPass != nil && !errors.Is(errPass, auth.ErrTokenNotFound) {
-		fmt.Fprintf(os.Stderr, "Warning: failed to read token from keychain: %v\n", errPass)
+	val, err := field.Resolve(getSecretsManager())
+	if err != nil && !errors.Is(err, auth.ErrTokenNotFound) {
+		fmt.Fprintf(os.Stderr, "Warning: failed to read credential from keychain: %v\n", err)
 	}
-	return user, pass
+	return val
 }
 
 // RequireOCIToken returns a username/token pair for registry, prompting
