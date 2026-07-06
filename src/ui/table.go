@@ -7,9 +7,9 @@ import (
 
 // ANSI color codes for terminal output.
 const (
-	colorGray  = "\x1b[90m"  // Gray for borders and separators
-	colorCyan  = "\x1b[36m"  // Cyan for column headers
-	colorReset = "\x1b[0m"   // Reset to default color
+	colorGray  = "\x1b[90m" // Gray for borders and separators
+	colorCyan  = "\x1b[36m" // Cyan for column headers
+	colorReset = "\x1b[0m"  // Reset to default color
 )
 
 // PrintTable prints a formatted table with borders, headers, and rows.
