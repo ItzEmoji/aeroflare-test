@@ -1,153 +1,254 @@
-let CACHED_IMAGE_PATH = null;
+// Prefix of the layer mediaType the Go pusher writes for a NAR blob:
+// "application/vnd.aeroflare.nar.v1+<compression>" (see internal/push/push.go).
+const NAR_MEDIA_TYPE_PREFIX = "application/vnd.aeroflare.nar.v1+";
 
-async function getOciToken(env, imagePath) {
-  const registry = env.NIXCACHE_REGISTRY || DEFAULT_REGISTRY;
-  const scope = `repository:${imagePath}:pull`;
-  const url = `https://${registry}/token?scope=${scope}&service=${registry}`;
-  
+const MANIFEST_ACCEPT =
+  "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json";
+
+// narinfo fields, in emission order, as [annotation suffix, canonical field name].
+// generateNarinfo loops this table, so adding a field is a one-line change and
+// every listed field appears automatically once the pusher sets its annotation.
+// The canonical names are fixed by Nix (e.g. "URL", "StorePath") and must match
+// exactly, which is why this is a mapping rather than a blind passthrough.
+const NARINFO_FIELDS = [
+  ["storepath", "StorePath"],
+  ["url", "URL"],
+  ["compression", "Compression"],
+  ["filehash", "FileHash"],
+  ["filesize", "FileSize"],
+  ["narhash", "NarHash"],
+  ["narsize", "NarSize"],
+  ["references", "References"],
+  ["deriver", "Deriver"],
+  ["ca", "CA"],
+  ["system", "System"],
+  ["sig", "Sig"],
+];
+
+// --- Module-global caches (persist across requests within a Worker isolate) ---
+
+// Bearer token cache. Registry tokens live a few minutes and are identical for
+// every request, so we mint one and reuse it for 4.5 minutes instead of a token
+// exchange before every manifest and blob fetch. Lazily expired on read.
+const TOKEN_TTL_MS = 4.5 * 60 * 1000;
+let cachedBearer = null; // { token, expiry }
+
+// Auth challenge cache. Learned once from a 401's WWW-Authenticate header, so
+// after the first cold request we mint tokens directly at the known realm and
+// never repeat the blind 401 probe. { realm, service, scope }
+let cachedChallenge = null;
+
+// Manifest cache. A client typically fetches "<hash>.narinfo" then
+// "/nar/<hash>..." back-to-back; both need the same manifest. Caching it briefly
+// spares the second request a registry round-trip. Keyed by tag.
+const MANIFEST_TTL_MS = 60 * 1000;
+const manifestCache = new Map(); // tag -> { manifest, expiry }
+
+// apiBase returns the OCI Distribution API root, e.g. "https://ghcr.io/v2".
+// The operator supplies just the registry URL (no registry is hardcoded); the
+// "/v2" prefix is part of the spec, so the worker owns it.
+function apiBase(env) {
+  const registry = (env.NIXCACHE_REGISTRY_URL || "").replace(/\/+$/, "");
+  return `${registry}/v2`;
+}
+
+// parseChallenge extracts realm/service/scope from a WWW-Authenticate header
+// value like: Bearer realm="https://ghcr.io/token",service="ghcr.io",scope="..."
+function parseChallenge(header) {
+  if (!header || !/^Bearer /i.test(header)) return null;
+  const out = {};
+  const re = /(\w+)="([^"]*)"/g;
+  let m;
+  while ((m = re.exec(header)) !== null) {
+    out[m[1]] = m[2];
+  }
+  return out.realm ? out : null;
+}
+
+// mintToken performs the token exchange at the realm the challenge points to,
+// attaching Basic credentials from NIXCACHE_TOKEN when present (for private
+// repos). Works for any registry because the realm/service/scope come straight
+// from the registry's own challenge.
+async function mintToken(env, challenge) {
+  if (!challenge || !challenge.realm) return "";
+  const u = new URL(challenge.realm);
+  if (challenge.service) u.searchParams.set("service", challenge.service);
+  if (challenge.scope) u.searchParams.set("scope", challenge.scope);
+
+  const headers = {};
+  if (env.NIXCACHE_TOKEN) {
+    const user = env.NIXCACHE_USERNAME || "token";
+    headers["Authorization"] = "Basic " + btoa(`${user}:${env.NIXCACHE_TOKEN}`);
+  }
+
   try {
-    const response = await fetch(url);
-    if (response.ok) {
-      const data = await response.json();
-      return data.token || "";
+    const res = await fetch(u.toString(), { headers });
+    if (res.ok) {
+      const data = await res.json();
+      return data.token || data.access_token || "";
     }
+    console.error(`Token exchange failed at ${u.origin}: ${res.status}`);
   } catch (err) {
-    console.error("Failed to fetch OCI token:", err);
+    console.error("Token exchange error:", err);
   }
   return "";
 }
 
-async function getOciManifestAndPath(env, ctx, tag) {
-  const cache = caches.default;
-  const cacheKey = new Request(`https://internal.cache/manifest-v3/${tag}`);
-  const ttl = parseInt(env.NIXCACHE_INDEX_TTL || DEFAULT_INDEX_TTL);
-  
-  try {
-    let response = await cache.match(cacheKey);
-    if (response) {
-      return await response.json();
-    }
-  } catch (err) {}
-
-  const registry = env.NIXCACHE_REGISTRY || DEFAULT_REGISTRY;
-  const repo = env.NIXCACHE_REPO || DEFAULT_REPO;
-  
-  // The user might be pushing tags directly to repo, or to repo/nix-cache.
-  const paths = CACHED_IMAGE_PATH ? [CACHED_IMAGE_PATH] : [repo, `${repo}/nix-cache`];
-  
-  for (const imagePath of paths) {
-    const token = await getOciToken(env, imagePath);
-    const headers = {
-      "Accept": "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json"
-    };
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-
-    const manifestUrl = `https://${registry}/v2/${imagePath}/manifests/${tag}`;
-    try {
-      const manifestRes = await fetch(manifestUrl, { headers });
-      if (manifestRes.ok) {
-        CACHED_IMAGE_PATH = imagePath;
-        const manifest = await manifestRes.json();
-        const result = { manifest, imagePath };
-        
-        try {
-          const cacheResponse = new Response(JSON.stringify(result), {
-            headers: {
-              "Content-Type": "application/json",
-              "Cache-Control": `s-maxage=${ttl}`
-            }
-          });
-          ctx.waitUntil(cache.put(cacheKey, cacheResponse));
-        } catch (err) {}
-        
-        return result;
-      }
-    } catch (err) {
-      console.error(`Error fetching manifest for tag ${tag} at path ${imagePath}:`, err);
+// currentBearer returns a bearer token to try WITHOUT waiting for a 401:
+// a live cached token, else a token minted from a previously-learned challenge,
+// else NIXCACHE_TOKEN used verbatim (covers ready-made JWTs / registries that
+// accept the raw token as a bearer). May return "" — the caller handles 401.
+async function currentBearer(env) {
+  if (cachedBearer && Date.now() < cachedBearer.expiry) {
+    return cachedBearer.token;
+  }
+  if (cachedChallenge) {
+    const token = await mintToken(env, cachedChallenge);
+    if (token) {
+      cachedBearer = { token, expiry: Date.now() + TOKEN_TTL_MS };
+      return token;
     }
   }
-  
-  return null;
+  return env.NIXCACHE_TOKEN || "";
 }
 
-async function getNarLabels(env, ctx, manifest, imagePath) {
-  if (!manifest) return null;
-
-  // 1. Check annotations (Standard OCI Image Manifest)
-  if (manifest.annotations && manifest.annotations["vnd.aeroflare.nar.storepath"]) {
-    return manifest.annotations;
-  }
-  // 2. Check labels at root (Non-standard but sometimes output by CLI tools)
-  if (manifest.labels && manifest.labels["vnd.aeroflare.nar.storepath"]) {
-    return manifest.labels;
-  }
-
-  // 3. Fallback to fetch config blob (Standard Docker Manifest behavior)
-  if (manifest.config && manifest.config.digest) {
-    const registry = env.NIXCACHE_REGISTRY || DEFAULT_REGISTRY;
-    const token = await getOciToken(env, imagePath);
+// registryFetch performs an authenticated request against the registry, learning
+// and caching the auth challenge on a 401 and retrying once with a fresh token.
+async function registryFetch(env, url, accept) {
+  const build = (token) => {
     const headers = {};
+    if (accept) headers["Accept"] = accept;
     if (token) headers["Authorization"] = `Bearer ${token}`;
-
-    const configUrl = `https://${registry}/v2/${imagePath}/blobs/${manifest.config.digest}`;
-    try {
-      const configRes = await fetch(configUrl, { headers });
-      if (configRes.ok) {
-        const config = await configRes.json();
-        if (config.config && config.config.Labels) return config.config.Labels;
-        if (config.Labels) return config.Labels;
-        if (config.config && config.config.labels) return config.config.labels;
-        if (config.labels) return config.labels;
-      }
-    } catch (err) {
-      console.error("Failed to fetch config blob:", err);
-    }
-  }
-
-  return null;
-}
-
-function generateNarinfo(labels) {
-  const map = {
-    "vnd.aeroflare.nar.storepath": "StorePath",
-    "vnd.aeroflare.nar.url": "URL",
-    "vnd.aeroflare.nar.compression": "Compression",
-    "vnd.aeroflare.nar.filehash": "FileHash",
-    "vnd.aeroflare.nar.filesize": "FileSize",
-    "vnd.aeroflare.nar.narhash": "NarHash",
-    "vnd.aeroflare.nar.narsize": "NarSize",
-    "vnd.aeroflare.nar.deriver": "Deriver",
-    "vnd.aeroflare.nar.system": "System",
-    "vnd.aeroflare.nar.sig": "Sig",
-    "vnd.aeroflare.nar.references": "References"
+    return { headers };
   };
 
-  const order = ["StorePath", "URL", "Compression", "FileHash", "FileSize", "NarHash", "NarSize", "Deriver", "System", "Sig"];
-  const extracted = {};
-  
-  for (const [k, v] of Object.entries(labels)) {
-    if (map[k]) {
-      extracted[map[k]] = v;
-    } else if (k.startsWith("vnd.aeroflare.nar.")) {
-      const key = k.split('.').pop();
-      const title = key.charAt(0).toUpperCase() + key.slice(1);
-      extracted[title] = v;
+  let res = await fetch(url, build(await currentBearer(env)));
+  if (res.status !== 401) return res;
+
+  const challenge = parseChallenge(res.headers.get("WWW-Authenticate"));
+  if (!challenge) return res;
+
+  const token = await mintToken(env, challenge);
+  if (!token) return res;
+
+  cachedChallenge = challenge;
+  cachedBearer = { token, expiry: Date.now() + TOKEN_TTL_MS };
+  return fetch(url, build(token));
+}
+
+// resolveManifest fetches and briefly caches the OCI manifest for a tag,
+// returning the parsed manifest or null on miss.
+async function resolveManifest(env, tag) {
+  const cached = manifestCache.get(tag);
+  if (cached && Date.now() < cached.expiry) {
+    return cached.manifest;
+  }
+
+  const url = `${apiBase(env)}/${env.NIXCACHE_REPO}/manifests/${tag}`;
+  try {
+    const res = await registryFetch(env, url, MANIFEST_ACCEPT);
+    if (res.ok) {
+      const manifest = await res.json();
+      manifestCache.set(tag, { manifest, expiry: Date.now() + MANIFEST_TTL_MS });
+      return manifest;
+    }
+  } catch (err) {
+    console.error(`Error fetching manifest for tag ${tag}:`, err);
+  }
+  return null;
+}
+
+// narAnnotations returns the aeroflare.* annotations map, or null if absent.
+function narAnnotations(manifest) {
+  if (manifest && manifest.annotations && manifest.annotations["aeroflare.storepath"]) {
+    return manifest.annotations;
+  }
+  return null;
+}
+
+// selectNarLayer picks the NAR blob layer: the one whose mediaType begins with
+// the aeroflare NAR prefix, falling back to the first layer.
+function selectNarLayer(manifest) {
+  if (!manifest || !Array.isArray(manifest.layers) || manifest.layers.length === 0) {
+    return null;
+  }
+  const match = manifest.layers.find(
+    (l) => typeof l.mediaType === "string" && l.mediaType.startsWith(NAR_MEDIA_TYPE_PREFIX),
+  );
+  return match || manifest.layers[0];
+}
+
+// generateNarinfo reconstructs a narinfo file by looping NARINFO_FIELDS.
+// References is always emitted (with its required trailing space — Nix reads a
+// field's value at colon+2, so a bare "References:" would swallow the next line);
+// every other field is emitted only when its annotation is present.
+function generateNarinfo(ann) {
+  const lines = [];
+  for (const [key, field] of NARINFO_FIELDS) {
+    const val = ann[`aeroflare.${key}`];
+    if (field === "References") {
+      lines.push(val ? `References: ${val}` : "References: ");
+    } else if (val) {
+      lines.push(`${field}: ${val}`);
+    }
+  }
+  return lines.join("\n") + "\n";
+}
+
+// handlePublicKey serves the cache's public signing key from the
+// aeroflare.public-key annotation on the "cache-config" manifest (the tag the
+// CLI's `configure` command writes).
+async function handlePublicKey(env) {
+  const manifest = await resolveManifest(env, "cache-config");
+  const ann = (manifest && manifest.annotations) || {};
+  const key = ann["aeroflare.public-key"] || ann["public-key"];
+  if (key) {
+    return new Response(key + "\n", { headers: { "Content-Type": "text/plain" } });
+  }
+  return new Response("No public key configured", { status: 404 });
+}
+
+async function handleNarinfo(env, path) {
+  const tag = path.replace(/^\//, "").replace(/\.narinfo$/, "");
+  const manifest = await resolveManifest(env, tag);
+  const ann = narAnnotations(manifest);
+  if (ann) {
+    return new Response(generateNarinfo(ann), {
+      headers: { "Content-Type": "text/x-nix-narinfo" },
+    });
+  }
+  return new Response("Not found", { status: 404 });
+}
+
+async function handleNar(env, path) {
+  const basename = path.replace(/^\/nar\//, "");
+  const ct = basename.endsWith(".xz") ? "application/x-xz" : "application/x-nix-nar";
+
+  // The manifest tag is the store hash: strip the compression extension from the
+  // NAR basename (e.g. <hash>.nar.zst -> <hash>).
+  const narIdx = basename.indexOf(".nar");
+  const tag = narIdx !== -1 ? basename.slice(0, narIdx) : basename;
+  if (!tag) return new Response("Not found", { status: 404 });
+
+  const manifest = await resolveManifest(env, tag);
+  const layer = selectNarLayer(manifest);
+  if (layer && layer.digest) {
+    const url = `${apiBase(env)}/${env.NIXCACHE_REPO}/blobs/${layer.digest}`;
+    try {
+      const res = await registryFetch(env, url, null);
+      if (res.ok) {
+        const headers = { "Content-Type": ct };
+        const len = res.headers.get("Content-Length");
+        if (len) headers["Content-Length"] = len;
+        return new Response(res.body, { headers });
+      }
+      console.error(`Blob fetch failed for ${layer.digest}: ${res.status}`);
+    } catch (err) {
+      console.error(`Failed to fetch blob ${layer.digest}:`, err);
     }
   }
 
-  let lines = [];
-  for (const key of order) {
-    if (extracted[key] !== undefined) {
-      lines.push(`${key}: ${extracted[key]}`);
-      delete extracted[key];
-    }
-  }
-  
-  for (const [key, value] of Object.entries(extracted)) {
-    lines.push(`${key}: ${value}`);
-  }
-  
-  return lines.join("\n") + "\n";
+  return new Response("Not found", { status: 404 });
 }
 
 export default {
@@ -155,139 +256,29 @@ export default {
     try {
       const url = new URL(request.url);
       const path = url.pathname.replace(/\/$/, "");
-      
-      const upstream = env.NIXCACHE_UPSTREAM ? env.NIXCACHE_UPSTREAM.split(" ") : DEFAULT_UPSTREAM;
-      const registry = env.NIXCACHE_REGISTRY || DEFAULT_REGISTRY;
 
       if (path === "/nix-cache-info") {
-        const info = "StoreDir: /nix/store\nWantMassQuery: 1\nPriority: 40\n";
-        return new Response(info, {
-          headers: { "Content-Type": "text/x-nix-cache-info" }
+        return new Response("StoreDir: /nix/store\nWantMassQuery: 1\nPriority: 40\n", {
+          headers: { "Content-Type": "text/x-nix-cache-info" },
         });
       }
 
-      if (path === "/api/public-key" || path === "/public-key") {
-        if (env.NIXCACHE_PUBLIC_KEY) {
-          return new Response(env.NIXCACHE_PUBLIC_KEY + "\n", { headers: { "Content-Type": "text/plain" }});
-        }
-        
-        // Fallback to cache-index manifest
-        const result = await getOciManifestAndPath(env, ctx, "cache-index");
-        if (result && result.manifest) {
-           const labels = await getNarLabels(env, ctx, result.manifest, result.imagePath);
-           if (labels && labels["aeroflare.public-key"]) {
-             return new Response(labels["aeroflare.public-key"] + "\n", { headers: { "Content-Type": "text/plain" }});
-           }
-           if (labels && labels["public-key"]) {
-             return new Response(labels["public-key"] + "\n", { headers: { "Content-Type": "text/plain" }});
-           }
-           if (result.manifest.annotations && result.manifest.annotations["aeroflare.public-key"]) {
-             return new Response(result.manifest.annotations["aeroflare.public-key"] + "\n", { headers: { "Content-Type": "text/plain" }});
-           }
-           if (result.manifest.annotations && result.manifest.annotations["public-key"]) {
-             return new Response(result.manifest.annotations["public-key"] + "\n", { headers: { "Content-Type": "text/plain" }});
-           }
-        }
-        
-        return new Response("No public key configured", { status: 404 });
+      if (path === "/public-key" || path === "/api/public-key") {
+        return handlePublicKey(env);
       }
 
       if (path.endsWith(".narinfo")) {
-        const storeHash = path.replace(/^\//, "").replace(/\.narinfo$/, "");
-        
-        // Fetch manifest for the storeHash tag
-        const result = await getOciManifestAndPath(env, ctx, storeHash);
-        if (result && result.manifest) {
-          const labels = await getNarLabels(env, ctx, result.manifest, result.imagePath);
-          if (labels) {
-            const narinfo = generateNarinfo(labels);
-            return new Response(narinfo, {
-              headers: { "Content-Type": "text/x-nix-narinfo" }
-            });
-          }
-        }
-
-        // Fallback to upstream
-        for (const cacheUrl of upstream) {
-          const fetchUrl = `${cacheUrl}/${storeHash}.narinfo`;
-          try {
-            const res = await fetch(fetchUrl);
-            if (res.ok) {
-              return new Response(res.body, {
-                headers: { "Content-Type": "text/x-nix-narinfo" }
-              });
-            }
-          } catch (err) {
-            console.error(`Failed to fetch upstream ${fetchUrl}:`, err);
-          }
-        }
-        return new Response("Not found", { status: 404 });
+        return handleNarinfo(env, path);
       }
 
       if (path.startsWith("/nar/")) {
-        const narBasename = path.replace(/^\/nar\//, "");
-        const ct = narBasename.endsWith(".xz") ? "application/x-xz" : 
-                   narBasename.endsWith(".zst") ? "application/zstd" : "application/x-nix-nar";
-        
-        // The storeHash is typically the first 32 characters of the nar file name
-        const storeHashMatch = narBasename.match(/^([a-z0-9]{32})/);
-        
-        if (storeHashMatch) {
-          const storeHash = storeHashMatch[1];
-          const result = await getOciManifestAndPath(env, ctx, storeHash);
-          
-          if (result && result.manifest && result.manifest.layers && result.manifest.layers.length > 0) {
-            // First layer is the nar blob
-            const narDigest = result.manifest.layers[0].digest;
-            
-            try {
-              const token = await getOciToken(env, result.imagePath);
-              const headers = {};
-              if (token) headers["Authorization"] = `Bearer ${token}`;
-              
-              const blobUrl = `https://${registry}/v2/${result.imagePath}/blobs/${narDigest}`;
-              const res = await fetch(blobUrl, { headers });
-              if (res.ok) {
-                return new Response(res.body, {
-                  headers: { 
-                    "Content-Type": ct, 
-                    "Content-Length": res.headers.get("Content-Length") || undefined 
-                  }
-                });
-              }
-            } catch (err) {
-              console.error(`Failed to fetch blob ${narDigest} from GHCR:`, err);
-            }
-          }
-        }
-
-        for (const cacheUrl of upstream) {
-          const fetchUrl = `${cacheUrl}${path}`;
-          try {
-            const res = await fetch(fetchUrl);
-            if (res.ok) {
-              return new Response(res.body, {
-                headers: { 
-                  "Content-Type": ct, 
-                  "Content-Length": res.headers.get("Content-Length") || undefined 
-                }
-              });
-            }
-          } catch (err) {
-            console.error(`Failed to fetch upstream ${fetchUrl}:`, err);
-          }
-        }
-        return new Response("Not found", { status: 404 });
+        return handleNar(env, path);
       }
 
-      // Fallback to static UI assets
-      if (env.ASSETS) {
-        return env.ASSETS.fetch(request);
-      }
       return new Response("Not found", { status: 404 });
     } catch (err) {
       console.error("Top level fetch error:", err);
       return new Response("Internal Server Error", { status: 500 });
     }
-  }
+  },
 };

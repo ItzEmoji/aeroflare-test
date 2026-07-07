@@ -1,8 +1,8 @@
 package setup
 
 import (
-	"aeroflare/internal/cacheindex"
 	"aeroflare/internal/oci"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -39,14 +39,6 @@ func RunProvision(cfg *InitConfig) error {
 			return fmt.Errorf("create git repository: %w", err)
 		}
 		printSuccess(fmt.Sprintf("%s repository created", cfg.GitProvider))
-	}
-
-	if cfg.Backend == BackendR2 {
-		next("Creating R2 bucket...")
-		if err := createR2Bucket(cfg); err != nil {
-			return fmt.Errorf("create R2 bucket: %w", err)
-		}
-		printSuccess(fmt.Sprintf("R2 bucket '%s' is ready", cfg.R2Bucket))
 	}
 
 	next("Deploying Cloudflare Worker...")
@@ -87,9 +79,6 @@ func countSteps(cfg *InitConfig) int {
 	if cfg.GitProvider != GitNone {
 		n += 2 // create repo + connect builds
 	}
-	if cfg.Backend == BackendR2 {
-		n++ // create R2 bucket
-	}
 	return n
 }
 
@@ -118,14 +107,7 @@ func createOCIRepository(cfg *InitConfig) error {
 	}
 	cfg.OCIToken = ociToken
 
-	annotations := map[string]string{
-		"aeroflare.backend": string(cfg.Backend),
-	}
-	if cfg.Backend == BackendR2 && cfg.R2Bucket != "" {
-		annotations["aeroflare.r2.bucket"] = cfg.R2Bucket
-	}
-
-	return cacheindex.PushConfigManifest(cfg.Registry, cfg.Repository, ociToken, annotations)
+	return oci.PushConfigManifest(cfg.Registry, cfg.Repository, ociToken, map[string]string{})
 }
 
 // checkRepositoryVisibility reminds the user to set package visibility.
@@ -173,11 +155,6 @@ func createGitRepository(cfg *InitConfig) error {
 	return nil
 }
 
-// createR2Bucket creates the Cloudflare R2 bucket.
-func createR2Bucket(cfg *InitConfig) error {
-	return createR2BucketViaAPI(cfg.CloudflareAccountID, cfg.CloudflareToken, cfg.R2Bucket)
-}
-
 // deployWorker fetches the latest worker script and deploys it to Cloudflare.
 func deployWorker(cfg *InitConfig) error {
 	scriptPath, err := resolveWorkerScript(cfg)
@@ -186,14 +163,20 @@ func deployWorker(cfg *InitConfig) error {
 	}
 
 	vars := workerEnvVars(cfg)
-	r2Bucket := ""
-	if cfg.Backend == BackendR2 {
-		r2Bucket = cfg.R2Bucket
+
+	// Optional registry PAT, stored as an encrypted secret binding so the Worker
+	// can authenticate to the registry (skips GHCR's token exchange; enables
+	// private repos). The Worker uses NIXCACHE_TOKEN verbatim as the bearer
+	// token, so we base64-encode the raw PAT here — that's exactly the value
+	// GHCR expects. Omitted entirely when the user didn't provide a token.
+	secrets := map[string]string{}
+	if cfg.WorkerToken != "" {
+		secrets["NIXCACHE_TOKEN"] = base64.StdEncoding.EncodeToString([]byte(cfg.WorkerToken))
 	}
 
 	scriptTag, err := deployWorkerViaAPI(
 		cfg.CloudflareAccountID, cfg.CloudflareToken,
-		cfg.WorkerName, scriptPath, "2024-12-01", vars, r2Bucket,
+		cfg.WorkerName, scriptPath, "2024-12-01", vars, secrets,
 	)
 	if err != nil {
 		return err
@@ -224,42 +207,31 @@ func pushToGitRepo(cfg *InitConfig) error {
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	// Fetch worker script. (Mirrors the backend->suffix mapping in
-	// resolveWorkerScript; duplicated here since pushToGitRepo always fetches
-	// the released script rather than reusing a local override.)
-	backendSuffix := "json"
-	switch cfg.Backend {
-	case BackendR2:
-		backendSuffix = "r2"
-	case BackendNative:
-		backendSuffix = "native"
-	}
-	scriptPath, err := fetchLatestWorkerScript(backendSuffix)
+	// Fetch worker script. (pushToGitRepo always fetches the released script
+	// rather than reusing a local override.)
+	scriptPath, err := fetchLatestWorkerScript()
 	if err == nil {
 		scriptContent, _ := os.ReadFile(scriptPath)
 		_ = os.WriteFile(tmpDir+"/worker.js", scriptContent, 0644)
 	}
 
 	// Write wrangler.toml
-	repo := strings.TrimSuffix(cfg.Repository, "/nix-cache")
 	wranglerToml := fmt.Sprintf(`name = "%s"
 main = "worker.js"
 compatibility_date = "2024-12-01"
 
 [vars]
+# Repository path, exactly as it lives in the registry (including /nix-cache).
 NIXCACHE_REPO = "%s"
-NIXCACHE_REGISTRY = "%s"
-NIXCACHE_UPSTREAM = "https://cache.nixos.org"
-NIXCACHE_INDEX_TTL = "200"
-`, cfg.WorkerName, repo, cfg.Registry)
+# Registry base URL WITH scheme but WITHOUT /v2 (the worker adds the spec's /v2).
+NIXCACHE_REGISTRY_URL = "%s"
 
-	if cfg.Backend == BackendR2 {
-		wranglerToml += fmt.Sprintf(`
-[[r2_buckets]]
-binding = "BUCKET"
-bucket_name = "%s"
-`, cfg.R2Bucket)
-	}
+# Optional: a registry bearer token, set as a secret (NOT a plaintext var). The
+# Worker uses it verbatim as the bearer, so for GHCR it must be the BASE64 PAT:
+#   printf '%%s' "github_pat_xxx" | base64 | wrangler secret put NIXCACHE_TOKEN
+# GHCR accepts it directly, skipping the token exchange (faster, private repos).
+`, cfg.WorkerName, cfg.Repository, workerRegistryURL(cfg.Registry))
+
 	_ = os.WriteFile(tmpDir+"/wrangler.toml", []byte(wranglerToml), 0644)
 
 	// Write GitHub Actions workflow
@@ -327,17 +299,9 @@ jobs:
 // resolveWorkerScript finds a worker.js to deploy.
 // Checks local conventional paths first, then fetches from the latest release.
 func resolveWorkerScript(cfg *InitConfig) (string, error) {
-	backendSuffix := "json"
-	switch cfg.Backend {
-	case BackendR2:
-		backendSuffix = "r2"
-	case BackendNative:
-		backendSuffix = "native"
-	}
-
 	localPaths := []string{
-		fmt.Sprintf("./proxy/no-webui-%s/worker.js", backendSuffix),
-		fmt.Sprintf("./aeroflare-proxy/proxy/no-webui-%s/worker.js", backendSuffix),
+		"./proxy/no-webui-native/worker.js",
+		"./aeroflare-proxy/proxy/no-webui-native/worker.js",
 		"./worker.js",
 	}
 	for _, p := range localPaths {
@@ -348,12 +312,12 @@ func resolveWorkerScript(cfg *InitConfig) (string, error) {
 	}
 
 	printInfo("No local worker.js found, fetching latest release...")
-	return fetchLatestWorkerScript(backendSuffix)
+	return fetchLatestWorkerScript()
 }
 
 // fetchLatestWorkerScript downloads the latest release tarball, extracts the
 // worker script to a temp directory, and returns its path.
-func fetchLatestWorkerScript(backendSuffix string) (string, error) {
+func fetchLatestWorkerScript() (string, error) {
 	resp, err := http.Get("https://api.github.com/repos/ItzEmoji/aeroflare/releases")
 	if err != nil {
 		return "", fmt.Errorf("fetch releases: %w", err)
@@ -386,7 +350,7 @@ func fetchLatestWorkerScript(backendSuffix string) (string, error) {
 		return "", fmt.Errorf("download release: %w", err)
 	}
 
-	scriptPath := fmt.Sprintf("%s/proxy/no-webui-%s/worker.js", tmpDir, backendSuffix)
+	scriptPath := fmt.Sprintf("%s/proxy/no-webui-native/worker.js", tmpDir)
 	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
 		_ = os.RemoveAll(tmpDir)
 		return "", fmt.Errorf("worker.js not found in release at %s", scriptPath)
@@ -397,13 +361,20 @@ func fetchLatestWorkerScript(backendSuffix string) (string, error) {
 
 // workerEnvVars builds the environment variable map for the worker deployment.
 func workerEnvVars(cfg *InitConfig) map[string]string {
-	repo := strings.TrimSuffix(cfg.Repository, "/nix-cache")
 	return map[string]string{
-		"NIXCACHE_REPO":      repo,
-		"NIXCACHE_REGISTRY":  cfg.Registry,
-		"NIXCACHE_UPSTREAM":  "https://cache.nixos.org",
-		"NIXCACHE_INDEX_TTL": "200",
+		"NIXCACHE_REPO":         cfg.Repository,
+		"NIXCACHE_REGISTRY_URL": workerRegistryURL(cfg.Registry),
 	}
+}
+
+// workerRegistryURL turns a registry host (e.g. "ghcr.io") into the base URL the
+// worker expects for NIXCACHE_REGISTRY_URL (e.g. "https://ghcr.io"). The worker
+// appends the spec's "/v2" API prefix itself, so it must not be included here.
+func workerRegistryURL(registry string) string {
+	if strings.HasPrefix(registry, "http://") || strings.HasPrefix(registry, "https://") {
+		return strings.TrimRight(registry, "/")
+	}
+	return "https://" + strings.TrimRight(registry, "/")
 }
 
 // sanitizeCloneURL strips the "user:token@" credentials that

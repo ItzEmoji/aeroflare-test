@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/huh"
@@ -124,32 +125,14 @@ func runScaffold() {
 		os.Exit(1)
 	}
 
-	// Select backend for wrangler.toml patching.
-	var indexType string
-	err = huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Choose your cache backend").
-				Options(
-					huh.NewOption("Cloudflare R2", "r2"),
-					huh.NewOption("Native OCI Tags", "native"),
-					huh.NewOption("JSON index in OCI", "json"),
-				).
-				Value(&indexType),
-		),
-	).Run()
-	if err != nil {
-		os.Exit(0)
-	}
-
-	proxyDir := fmt.Sprintf("%s/proxy/no-webui-%s", targetDir, indexType)
+	proxyDir := fmt.Sprintf("%s/proxy/no-webui-native", targetDir)
 	if _, err := os.Stat(proxyDir); os.IsNotExist(err) {
 		PrintError(fmt.Sprintf("Proxy directory %s not found in the release", proxyDir))
 		os.Exit(1)
 	}
 
 	// Patch wrangler.toml with environment values if available.
-	patchWranglerToml(proxyDir, indexType)
+	patchWranglerToml(proxyDir)
 
 	PrintSuccess(fmt.Sprintf("Project scaffolded at %s", proxyDir))
 	PrintInfo("You can now customize the worker and deploy with 'aeroflare init' or 'npx wrangler deploy'.")
@@ -157,7 +140,7 @@ func runScaffold() {
 
 // patchWranglerToml applies configuration values from environment variables
 // to the scaffolded wrangler.toml template.
-func patchWranglerToml(proxyDir, indexType string) {
+func patchWranglerToml(proxyDir string) {
 	registry, repository := "", ""
 	if r := os.Getenv("AEROFLARE_REGISTRY"); r != "" {
 		registry = r
@@ -178,7 +161,7 @@ func patchWranglerToml(proxyDir, indexType string) {
 			registry = r
 		}
 		if repository == "" {
-			repository = strings.TrimSuffix(repo, "/nix-cache")
+			repository = repo
 		}
 	}
 
@@ -189,26 +172,36 @@ func patchWranglerToml(proxyDir, indexType string) {
 		return
 	}
 
+	// Set the two vars the worker reads, replacing either a commented placeholder
+	// or a concrete default line so it works whatever the template ships with.
 	s := string(content)
 	if repository != "" {
-		s = strings.Replace(s, `# NIXCACHE_REPO = "<NIXCACHE_REPO>"`, fmt.Sprintf(`NIXCACHE_REPO = "%s"`, repository), 1)
+		s = setWranglerVar(s, "NIXCACHE_REPO", repository)
 	}
 	if registry != "" {
-		s = strings.Replace(s, `# NIXCACHE_REGISTRY = "<NIXCACHE_REGISTRY>"`, fmt.Sprintf(`NIXCACHE_REGISTRY = "%s"`, registry), 1)
-	}
-	s = strings.Replace(s, `# NIXCACHE_UPSTREAM = "<NIXCACHE_UPSTREAM>"`, `NIXCACHE_UPSTREAM = "https://cache.nixos.org"`, 1)
-	s = strings.Replace(s, `# NIXCACHE_INDEX_TTL = "<NIXCACHE_INDEX_TTL"`, `NIXCACHE_INDEX_TTL = "200"`, 1)
-
-	if indexType == "r2" {
-		bucket := os.Getenv("R2_BUCKET")
-		if bucket == "" {
-			bucket = strings.ReplaceAll(repository, "/", "-") + "-index"
-		}
-		s = strings.Replace(s, `# [[r2_buckets]]`, `[[r2_buckets]]`, 1)
-		s = strings.Replace(s, `# binding = "BUCKET"`, `binding = "BUCKET"`, 1)
-		s = strings.Replace(s, `# bucket_name = "<bucket-name>"`, fmt.Sprintf(`bucket_name = "%s"`, bucket), 1)
-		s = strings.Replace(s, `# bucket_name = "<bucket-name>" `, fmt.Sprintf(`bucket_name = "%s"`, bucket), 1)
+		s = setWranglerVar(s, "NIXCACHE_REGISTRY_URL", workerRegistryURL(registry))
 	}
 
 	_ = os.WriteFile(wranglerPath, []byte(s), 0644)
+}
+
+// setWranglerVar sets `key = "value"` in a wrangler.toml body, replacing an
+// existing (possibly commented) assignment for key if present, else appending.
+func setWranglerVar(body, key, value string) string {
+	line := fmt.Sprintf(`%s = "%s"`, key, value)
+	re := regexp.MustCompile(`(?m)^#?\s*` + regexp.QuoteMeta(key) + `\s*=.*$`)
+	if re.MatchString(body) {
+		return re.ReplaceAllString(body, line)
+	}
+	return strings.TrimRight(body, "\n") + "\n" + line + "\n"
+}
+
+// workerRegistryURL turns a registry host (e.g. "ghcr.io") into the base URL the
+// worker expects for NIXCACHE_REGISTRY_URL (e.g. "https://ghcr.io"); the worker
+// appends the spec's "/v2" prefix itself.
+func workerRegistryURL(registry string) string {
+	if strings.HasPrefix(registry, "http://") || strings.HasPrefix(registry, "https://") {
+		return strings.TrimRight(registry, "/")
+	}
+	return "https://" + strings.TrimRight(registry, "/")
 }
