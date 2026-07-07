@@ -1,7 +1,7 @@
 package proxy
 
 import (
-	"aeroflare/internal/oci"
+	"github.com/itzemoji/aeroflare/internal/oci"
 	"context"
 	"fmt"
 	"log/slog"

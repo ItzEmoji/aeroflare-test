@@ -5,9 +5,9 @@ import (
 	"net/url"
 	"strings"
 
-	"aeroflare/internal/auth"
-	"aeroflare/internal/secrets"
-	"aeroflare/internal/ui"
+	"github.com/itzemoji/aeroflare/internal/auth"
+	"github.com/itzemoji/aeroflare/internal/secrets"
+	"github.com/itzemoji/aeroflare/internal/ui"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/viper"

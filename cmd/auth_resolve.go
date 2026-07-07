@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"aeroflare/internal/auth"
+	"github.com/itzemoji/aeroflare/internal/auth"
 )
 
 // isTerminal reports whether stdin is an interactive character device, used

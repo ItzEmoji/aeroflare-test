@@ -3,7 +3,7 @@ package cmd
 import (
 	"os"
 
-	setup "aeroflare/internal/init"
+	setup "github.com/itzemoji/aeroflare/internal/init"
 
 	"github.com/spf13/cobra"
 )

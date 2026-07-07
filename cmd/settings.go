@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	setup "aeroflare/internal/init"
+	setup "github.com/itzemoji/aeroflare/internal/init"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"

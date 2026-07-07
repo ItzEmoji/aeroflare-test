@@ -4,7 +4,7 @@ import (
 	"errors"
 	"os"
 
-	"aeroflare/internal/secrets"
+	"github.com/itzemoji/aeroflare/internal/secrets"
 )
 
 // ErrTokenNotFound is returned by Resolve when a credential could not be

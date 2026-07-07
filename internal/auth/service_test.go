@@ -1,7 +1,7 @@
 package auth_test
 
 import (
-	"aeroflare/internal/auth"
+	"github.com/itzemoji/aeroflare/internal/auth"
 	"testing"
 )
 

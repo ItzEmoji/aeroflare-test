@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"aeroflare/internal/auth"
+	"github.com/itzemoji/aeroflare/internal/auth"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/spf13/viper"

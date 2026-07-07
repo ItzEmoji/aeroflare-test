@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"aeroflare/internal/secrets"
+	"github.com/itzemoji/aeroflare/internal/secrets"
 )
 
 // Field is one atomic secret that makes up a credential. A Service is composed

@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"aeroflare/internal/prepare/compress"
-	"aeroflare/internal/prepare/prepare"
-	"aeroflare/internal/prepare/signing"
+	"github.com/itzemoji/aeroflare/internal/prepare/compress"
+	"github.com/itzemoji/aeroflare/internal/prepare/prepare"
+	"github.com/itzemoji/aeroflare/internal/prepare/signing"
 
 	"github.com/spf13/cobra"
 )

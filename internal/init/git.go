@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"aeroflare/internal/auth"
+	"github.com/itzemoji/aeroflare/internal/auth"
 
 	"golang.org/x/crypto/nacl/box"
 )

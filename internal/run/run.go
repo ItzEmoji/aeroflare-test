@@ -12,8 +12,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"aeroflare/internal/proxy"
-	"aeroflare/internal/ui"
+	"github.com/itzemoji/aeroflare/internal/proxy"
+	"github.com/itzemoji/aeroflare/internal/ui"
 )
 
 // RunConfig holds the command line to be executed via the Nix proxy.

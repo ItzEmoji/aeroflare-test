@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"os"
 
-	narhash "aeroflare/internal/prepare/hash"
-	"aeroflare/internal/prepare/narinfo"
+	narhash "github.com/itzemoji/aeroflare/internal/prepare/hash"
+	"github.com/itzemoji/aeroflare/internal/prepare/narinfo"
 	"strconv"
 	"strings"
 

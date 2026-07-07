@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"aeroflare/internal/oci"
-	"aeroflare/internal/push"
-	"aeroflare/internal/run"
+	"github.com/itzemoji/aeroflare/internal/oci"
+	"github.com/itzemoji/aeroflare/internal/push"
+	"github.com/itzemoji/aeroflare/internal/run"
 
 	"github.com/spf13/cobra"
 )

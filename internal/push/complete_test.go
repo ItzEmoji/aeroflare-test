@@ -3,8 +3,8 @@ package push
 import (
 	"testing"
 
-	"aeroflare/internal/backend"
-	"aeroflare/internal/prepare/prepare"
+	"github.com/itzemoji/aeroflare/internal/backend"
+	"github.com/itzemoji/aeroflare/internal/prepare/prepare"
 )
 
 func TestCompleteReceipts_ExcludesEntriesWithFailedRefs(t *testing.T) {

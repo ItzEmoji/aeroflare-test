@@ -3,8 +3,8 @@ package push
 import (
 	"sort"
 
-	"aeroflare/internal/backend"
-	"aeroflare/internal/prepare/prepare"
+	"github.com/itzemoji/aeroflare/internal/backend"
+	"github.com/itzemoji/aeroflare/internal/prepare/prepare"
 )
 
 // completeReceipts filters receipts down to store paths whose full closure

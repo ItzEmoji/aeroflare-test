@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"aeroflare/internal/secrets"
+	"github.com/itzemoji/aeroflare/internal/secrets"
 	"bytes"
 	"encoding/json"
 	"errors"

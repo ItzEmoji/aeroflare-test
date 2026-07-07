@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"aeroflare/internal/auth"
-	"aeroflare/internal/secrets"
+	"github.com/itzemoji/aeroflare/internal/auth"
+	"github.com/itzemoji/aeroflare/internal/secrets"
 
 	"github.com/spf13/cobra"
 )

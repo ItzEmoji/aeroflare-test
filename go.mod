@@ -1,4 +1,4 @@
-module aeroflare
+module github.com/itzemoji/aeroflare
 
 go 1.26.4
 

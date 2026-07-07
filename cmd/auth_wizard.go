@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"aeroflare/internal/auth"
+	"github.com/itzemoji/aeroflare/internal/auth"
 	"fmt"
 
 	"github.com/charmbracelet/huh"

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"aeroflare/internal/oci"
-	"aeroflare/internal/proxy"
+	"github.com/itzemoji/aeroflare/internal/oci"
+	"github.com/itzemoji/aeroflare/internal/proxy"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"

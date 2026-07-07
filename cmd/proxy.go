@@ -9,8 +9,8 @@ import (
 	"strings"
 	"syscall"
 
-	"aeroflare/internal/oci"
-	"aeroflare/internal/proxy"
+	"github.com/itzemoji/aeroflare/internal/oci"
+	"github.com/itzemoji/aeroflare/internal/proxy"
 
 	"github.com/spf13/cobra"
 )

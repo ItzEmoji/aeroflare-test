@@ -3,8 +3,8 @@ package cmd
 import (
 	"os"
 
-	"aeroflare/internal/oci"
-	"aeroflare/internal/push"
+	"github.com/itzemoji/aeroflare/internal/oci"
+	"github.com/itzemoji/aeroflare/internal/push"
 
 	"github.com/spf13/cobra"
 )

@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"aeroflare/internal/oci"
+	"github.com/itzemoji/aeroflare/internal/oci"
 	"encoding/json"
 	"fmt"
 	"net/http"
