@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -16,15 +15,16 @@ const (
 
 // PrintTable prints a formatted table with borders, headers, and rows to
 // stdout. Columns are auto-sized to fit the widest content in each column.
-func PrintTable(headers []string, rows [][]string) {
-	PrintTableTo(os.Stdout, headers, rows)
+func PrintTable(headers []string, rows [][]string) error {
+	return PrintTableTo(os.Stdout, headers, rows)
 }
 
-// PrintTableTo prints a formatted table with borders, headers, and rows to w.
-// Columns are auto-sized to fit the widest content in each column.
-func PrintTableTo(w io.Writer, headers []string, rows [][]string) {
+// PrintTableTo renders a formatted table with borders, headers, and rows and
+// writes it to w. Columns are auto-sized to fit the widest content in each
+// column. It returns any error encountered writing to w.
+func PrintTableTo(w io.Writer, headers []string, rows [][]string) error {
 	if len(headers) == 0 {
-		return
+		return nil
 	}
 
 	// Calculate the width needed for each column based on headers and data.
@@ -51,35 +51,51 @@ func PrintTableTo(w io.Writer, headers []string, rows [][]string) {
 		return colorGray + left + strings.Join(columnSeparators, mid) + right + colorReset
 	}
 
+	// padRight left-justifies s in a field of the given width, matching the
+	// "%-*s" verb but without a fmt call so the render path can build the
+	// output purely through strings.Builder (whose writes never fail).
+	padRight := func(s string, width int) string {
+		if pad := width - len(s); pad > 0 {
+			return s + strings.Repeat(" ", pad)
+		}
+		return s
+	}
+
+	// Build the whole table in memory first so the writer is touched exactly
+	// once; strings.Builder never fails, keeping the render loop error-free.
+	var b strings.Builder
+
 	// Top border
-	fmt.Fprintln(w, "  "+drawLine("╭", "┬", "╮", "─"))
+	b.WriteString("  " + drawLine("╭", "┬", "╮", "─") + "\n")
 
 	// Print column headers with cyan highlighting
-	fmt.Fprint(w, "  "+colorGray+"│"+colorReset)
+	b.WriteString("  " + colorGray + "│" + colorReset)
 	for i, header := range headers {
-		fmt.Fprintf(w, " "+colorCyan+"%-*s"+colorReset+" "+colorGray+"│"+colorReset, columnWidths[i], header)
+		b.WriteString(" " + colorCyan + padRight(header, columnWidths[i]) + colorReset + " " + colorGray + "│" + colorReset)
 	}
-	fmt.Fprintln(w)
+	b.WriteString("\n")
 
 	// Header separator
-	fmt.Fprintln(w, "  "+drawLine("├", "┼", "┤", "─"))
+	b.WriteString("  " + drawLine("├", "┼", "┤", "─") + "\n")
 
 	// Print table rows, padding cells to match column widths
 	for _, row := range rows {
-		fmt.Fprint(w, "  "+colorGray+"│"+colorReset)
+		b.WriteString("  " + colorGray + "│" + colorReset)
 		for i, cell := range row {
-			columnWidth := columnWidths[i]
 			if i < len(columnWidths) {
-				fmt.Fprintf(w, " %-*s "+colorGray+"│"+colorReset, columnWidth, cell)
+				b.WriteString(" " + padRight(cell, columnWidths[i]) + " " + colorGray + "│" + colorReset)
 			}
 		}
 		// Pad with empty cells if row has fewer columns than headers
 		for i := len(row); i < len(headers); i++ {
-			fmt.Fprintf(w, " %-*s "+colorGray+"│"+colorReset, columnWidths[i], "")
+			b.WriteString(" " + padRight("", columnWidths[i]) + " " + colorGray + "│" + colorReset)
 		}
-		fmt.Fprintln(w)
+		b.WriteString("\n")
 	}
 
 	// Bottom border
-	fmt.Fprintln(w, "  "+drawLine("╰", "┴", "╯", "─"))
+	b.WriteString("  " + drawLine("╰", "┴", "╯", "─") + "\n")
+
+	_, err := io.WriteString(w, b.String())
+	return err
 }

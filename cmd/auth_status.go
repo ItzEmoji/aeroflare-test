@@ -146,8 +146,8 @@ var authStatusCmd = &cobra.Command{
 
 		out := cmd.OutOrStdout()
 		if len(entries) == 0 && len(custom) == 0 {
-			fmt.Fprintln(out, "No credentials saved.")
-			return nil
+			_, err := fmt.Fprintln(out, "No credentials saved.")
+			return err
 		}
 
 		// Build one row per field. The Service, ID, and Status columns are
@@ -178,13 +178,18 @@ var authStatusCmd = &cobra.Command{
 			rows = append(rows, []string{"Custom", "-", k, "(hidden)", "-"})
 		}
 
-		ui.PrintTableTo(out, []string{"Service", "ID", "Field", "Value", "Status"}, rows)
+		if err := ui.PrintTableTo(out, []string{"Service", "ID", "Field", "Value", "Status"}, rows); err != nil {
+			return err
+		}
 
 		if len(footnotes) > 0 {
-			fmt.Fprintln(out)
-			fmt.Fprintln(out, "Warnings:")
+			if _, err := fmt.Fprintln(out, "\nWarnings:"); err != nil {
+				return err
+			}
 			for _, note := range footnotes {
-				fmt.Fprintf(out, "  • %s\n", note)
+				if _, err := fmt.Fprintf(out, "  • %s\n", note); err != nil {
+					return err
+				}
 			}
 		}
 		return nil

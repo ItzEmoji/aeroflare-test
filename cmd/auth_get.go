@@ -41,8 +41,8 @@ For a multi-field service with no field given, each field is printed as
 				PrintError(fmt.Sprintf("no value found for %s %s", svc.DisplayName, field.Name))
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), val)
-			return nil
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), val)
+			return err
 		}
 		if len(rest) > 1 {
 			err := fmt.Errorf("get takes at most one field name")
@@ -63,14 +63,16 @@ For a multi-field service with no field given, each field is printed as
 
 		// Single-field service: print the bare value so it can be piped.
 		if len(svc.Fields) == 1 {
-			fmt.Fprintln(cmd.OutOrStdout(), vals[svc.Fields[0].Name])
-			return nil
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), vals[svc.Fields[0].Name])
+			return err
 		}
 
 		// Multi-field service: print each field as name=value, in declared order.
 		for _, f := range svc.Fields {
 			if v, ok := vals[f.Name]; ok {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s=%s\n", f.Name, v)
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s=%s\n", f.Name, v); err != nil {
+					return err
+				}
 			}
 		}
 		return nil

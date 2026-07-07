@@ -12,11 +12,6 @@ import (
 	"time"
 )
 
-const (
-	userAgent            = "aeroflare/1.0"
-	ociManifestMediaType = "application/vnd.oci.image.manifest.v1+json"
-)
-
 // BootstrapConfig fetches the dynamic RemoteConfig (worker URL, public key,
 // upstream caches) from the "cache-config" annotations on the OCI registry.
 // The caller-supplied *http.Client is reused so its transport's connection
