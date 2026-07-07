@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"aeroflare/internal/backend"
-	"aeroflare/internal/cacheindex"
 	"aeroflare/internal/oci"
 	"aeroflare/internal/prepare/cache"
 	"aeroflare/internal/prepare/compress"
@@ -21,7 +20,6 @@ import (
 	"aeroflare/internal/prepare/prepare"
 	"aeroflare/internal/prepare/signing"
 	"aeroflare/internal/proxy"
-	"aeroflare/internal/r2"
 	"aeroflare/internal/ui"
 
 	"strconv"
@@ -182,28 +180,11 @@ func RunPush(plan *PushPlan) error {
 
 	ctx := context.Background()
 
-	existingIndex, err := cacheindex.FetchCacheIndex(registry, repository, ociToken)
-	if err != nil {
-		fmt.Printf("WARNING: failed to fetch cache index: %v\n", err)
-		existingIndex = &cacheindex.PushCacheIndex{Entries: make(map[string]cacheindex.PushCacheEntry)}
-	}
-	if existingIndex.Entries == nil {
-		existingIndex.Entries = make(map[string]cacheindex.PushCacheEntry)
-	}
-
 	var filteredPaths []string
 	if plan.Config.ForcePush {
 		filteredPaths = plan.FilteredPaths
 	} else {
-		for _, p := range plan.FilteredPaths {
-			basename := filepath.Base(p)
-			parts := strings.SplitN(basename, "-", 2)
-			if len(parts) >= 2 && existingIndex.Entries[parts[0]].NarDigest != "" {
-				fmt.Printf("Skipping %s (already in cache index)\n", p)
-				continue
-			}
-			filteredPaths = append(filteredPaths, p)
-		}
+		filteredPaths = plan.FilteredPaths
 
 		if len(filteredPaths) > 0 && plan.Config.CacheURL != "" {
 			c := cache.New(plan.Config.CacheURL, cache.WithMaxConns(plan.Config.Workers))
@@ -243,12 +224,7 @@ func RunPush(plan *PushPlan) error {
 	tokenMgr := proxy.NewTokenManager(registry, repository, "")
 	_, configAnnotations, _ := proxy.BootstrapConfigWithAnnotations(ctx, nil, registry, repository, tokenMgr)
 
-	r2Cfg := r2.GetR2Config(configAnnotations)
-	if r2Cfg != nil {
-		fmt.Printf("R2 Object Storage enabled (Bucket: %s)\n", r2Cfg.Bucket)
-	}
-
-	var totalReceipts []cacheindex.PushReceipt
+	var totalReceipts []backend.PushReceipt
 	var failedPaths []string
 	var excludedPaths []string
 
@@ -333,7 +309,7 @@ func RunPush(plan *PushPlan) error {
 		}
 
 		var mu sync.Mutex
-		receiptsByPath := make(map[string]cacheindex.PushReceipt)
+		receiptsByPath := make(map[string]backend.PushReceipt)
 		var chunkFailed []string
 		eg, _ := errgroup.WithContext(ctx)
 		eg.SetLimit(plan.Config.Workers)
@@ -390,7 +366,7 @@ func RunPush(plan *PushPlan) error {
 					printSuccess(pkgName)
 				}
 
-				receiptsByPath[r.StorePath] = cacheindex.PushReceipt{
+				receiptsByPath[r.StorePath] = backend.PushReceipt{
 					StorePath:   r.StorePath,
 					NarinfoPath: r.NarinfoPath,
 					NarDigest:   narDigest,
@@ -431,7 +407,6 @@ func RunPush(plan *PushPlan) error {
 				Token:             ociToken,
 				PubKeyPath:        plan.Config.SigningKey,
 				ConfigAnnotations: configAnnotations,
-				R2:                r2Cfg,
 				Workers:           plan.Config.Workers,
 			})
 			if err := backend.PushReceipts(ctx, chunkReceipts); err != nil {

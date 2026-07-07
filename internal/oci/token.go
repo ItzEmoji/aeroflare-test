@@ -19,7 +19,7 @@ import (
 
 // ExchangeToken performs a token exchange for a given OCI registry.
 // Some registries (like ghcr.io) require Basic auth token exchange to get a Bearer token.
-// repository should be the full repository path (e.g. "itzemoji/nix-cache-test/nix-cache")
+// repository should be the full repository path (e.g. "itzemoji/nix-cache-test")
 func ExchangeToken(registry, repository, username, basicAuthToken string) (string, error) {
 	if reg, err := name.NewRegistry(registry); err == nil {
 		registry = reg.RegistryStr()
@@ -139,8 +139,8 @@ func GetToken(registry, repository, explicitToken string) string {
 
 // GetRegistryAndRepository derives the target registry and repository from
 // viper config / environment: an explicit cache-url (oci://registry/repo)
-// takes precedence, otherwise it falls back to a cache name and defaults the
-// repository to "<cache>/nix-cache". Exits the process if neither is set.
+// takes precedence, otherwise it falls back to using the cache name as the
+// repository. Exits the process if neither is set.
 func GetRegistryAndRepository() (string, string) {
 	registry := viper.GetString("registry")
 	if registry == "" {
@@ -171,12 +171,7 @@ func GetRegistryAndRepository() (string, string) {
 			fmt.Fprintln(os.Stderr, "Error: AEROFLARE_CACHE or AEROFLARE_CACHE_URL configuration is required")
 			os.Exit(1)
 		}
-		cacheName = strings.ToLower(cacheName)
-		if (registry == "docker.io" || registry == "index.docker.io" || registry == "registry-1.docker.io") && strings.Contains(cacheName, "/") {
-			repository = cacheName
-		} else {
-			repository = fmt.Sprintf("%s/nix-cache", cacheName)
-		}
+		repository = strings.ToLower(cacheName)
 	}
 
 	return registry, repository

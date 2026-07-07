@@ -57,7 +57,7 @@ func BootstrapConfigWithAnnotations(ctx context.Context, client *http.Client, re
 }
 
 // StartProxy starts the proxy HTTP server on the configured address.
-func StartProxy(ctx context.Context, port int, listenAddr string, registry string, repository string, indexDir string, cacheFileName string, indexTTLSeconds int, upstreams []string, githubToken string) (int, error) {
+func StartProxy(ctx context.Context, port int, listenAddr string, registry string, repository string, upstreams []string, githubToken string) (int, error) {
 	// --- VALIDATION CHECK ---
 	for _, upstream := range upstreams {
 		if !IsValidUpstreamURL(upstream) {
@@ -66,20 +66,6 @@ func StartProxy(ctx context.Context, port int, listenAddr string, registry strin
 	}
 
 	tokenMgr := NewTokenManager(registry, repository, githubToken)
-
-	if cacheFileName == "" {
-		cacheFileName = "cache-index.json"
-	}
-
-	ttl := time.Duration(indexTTLSeconds) * time.Second
-	cacheIndex := &CacheIndex{
-		IndexDir:      indexDir,
-		CacheFileName: cacheFileName,
-		IndexTTL:      ttl,
-		TokenMgr:      tokenMgr,
-		Registry:      registry,
-		Repository:    repository,
-	}
 
 	// --- HTTP TRANSPORT & CLIENT TUNING ---
 	var transport *http.Transport
@@ -109,14 +95,6 @@ func StartProxy(ctx context.Context, port int, listenAddr string, registry strin
 		Timeout:   30 * time.Minute, // Kept high for massive NARs
 	}
 
-	// Seed the local cache file and refresh in the background
-	_ = cacheIndex.loadLocal()
-	go func() {
-		// context.WithoutCancel (Go 1.21+) decouples this from server startup context
-		bgCtx := context.WithoutCancel(ctx)
-		cacheIndex.Get(bgCtx)
-	}()
-
 	ps := &ProxyServer{
 		Port:           port,
 		ListenAddr:     listenAddr,
@@ -124,7 +102,6 @@ func StartProxy(ctx context.Context, port int, listenAddr string, registry strin
 		Repository:     repository,
 		UpstreamCaches: upstreams,
 		TokenMgr:       tokenMgr,
-		CacheIndex:     cacheIndex,
 		HttpClient:     proxyClient,
 		HttpShortClient: &http.Client{
 			Transport: transport,
@@ -160,7 +137,6 @@ func StartProxy(ctx context.Context, port int, listenAddr string, registry strin
 			"port", actualPort,
 			"repository", repository,
 			"upstream", strings.Join(upstreams, ", "),
-			"index_ttl", ttl.String(),
 		)
 		serveErr <- server.Serve(listener)
 	}()

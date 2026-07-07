@@ -3,7 +3,7 @@ package push
 import (
 	"sort"
 
-	"aeroflare/internal/cacheindex"
+	"aeroflare/internal/backend"
 	"aeroflare/internal/prepare/prepare"
 )
 
@@ -12,7 +12,7 @@ import (
 // uploaded. byPath maps store paths to their upload receipts; absence means
 // the upload failed. It returns the receipts safe to index and the store
 // paths excluded because their closure is incomplete.
-func completeReceipts(results []*prepare.Result, byPath map[string]cacheindex.PushReceipt) ([]cacheindex.PushReceipt, []string) {
+func completeReceipts(results []*prepare.Result, byPath map[string]backend.PushReceipt) ([]backend.PushReceipt, []string) {
 	memo := make(map[string]bool)
 
 	var complete func(r *prepare.Result) bool
@@ -36,7 +36,7 @@ func completeReceipts(results []*prepare.Result, byPath map[string]cacheindex.Pu
 		return ok
 	}
 
-	var receipts []cacheindex.PushReceipt
+	var receipts []backend.PushReceipt
 	var excluded []string
 	seen := make(map[string]bool)
 

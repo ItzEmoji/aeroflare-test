@@ -9,7 +9,7 @@ We'll cover how to initialize your configuration, authenticate with your cache p
 
 ## 1. Install & Initialize
 
-The fastest way to get started is to use the interactive setup wizard via Nix. This provisions your backend (like Cloudflare R2 or GitHub Container Registry) and configures your local environment.
+The fastest way to get started is to use the interactive setup wizard via Nix. This provisions your storage (a GitHub Container Registry repository and a Cloudflare Worker) and configures your local environment.
 
 ```bash
 nix run github:ItzEmoji/aeroflare -- init
@@ -25,7 +25,7 @@ The `init` command guides you through an interactive setup:
 During initialization, the wizard will prompt you for the necessary credentials. If you don't have them defined in your local OS keychain or secrets manager, you'll be asked to provide:
 
 - A **GitHub / GitLab Personal Access Token**
-- Or a **Cloudflare API Token** (if using Cloudflare R2)
+- A **Cloudflare API Token** (to deploy the Worker)
 
 Aeroflare securely saves these tokens for future use.
 :::

@@ -8,12 +8,39 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
+
+// newFallthroughRegistry returns a mock OCI registry (host without scheme) and
+// its cleanup func. It issues anonymous tokens and serves a "cache-config"
+// manifest (carrying a public key), but 404s every per-package manifest, so
+// native-mode narinfo/NAR lookups fail fast and hermetically fall through to the
+// upstream cache instead of reaching a real registry.
+func newFallthroughRegistry(t *testing.T) (string, func()) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v2/":
+			w.WriteHeader(http.StatusOK)
+		case r.URL.Path == "/token":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"token":"mock-token"}`))
+		case strings.HasSuffix(r.URL.Path, "/manifests/cache-config"):
+			w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"schemaVersion": 2, "mediaType": "application/vnd.oci.image.manifest.v1+json", "config": {"digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a", "size": 2}, "layers": [], "annotations": {"aeroflare.public-key": "test-public-key"}}`))
+		case strings.HasPrefix(r.URL.Path, "/v2/") && strings.Contains(r.URL.Path, "/blobs/"):
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	return strings.TrimPrefix(srv.URL, "http://"), srv.Close
+}
 
 func TestProxyServerEndpoints(t *testing.T) {
 	mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -26,33 +53,16 @@ func TestProxyServerEndpoints(t *testing.T) {
 	}))
 	defer mockUpstream.Close()
 
-	// Setup mock CacheIndex
-	cacheIndex := &CacheIndex{
-		Data: &CacheIndexData{
-			PublicKey: "test-public-key",
-			Generated: "2026-06-18",
-			Entries: map[string]IndexEntry{
-				"test-hash": {
-					NarInfo:   "StoreDir: /nix/store\nURL: nar/test-nar.nar.xz\n",
-					NarDigest: "sha256:test-digest",
-				},
-			},
-		},
-		NarLookups: map[string]string{
-			"test-nar.nar.xz": "sha256:test-digest",
-		},
-		LastFetch: time.Now(),
-		IndexTTL:  5 * time.Minute,
-	}
+	reg, closeReg := newFallthroughRegistry(t)
+	defer closeReg()
 
 	ps := &ProxyServer{
 		Port:            37515,
 		ListenAddr:      "127.0.0.1",
-		Registry:        "ghcr.io",
-		Repository:      "test-repo/nix-cache",
+		Registry:        reg,
+		Repository:      "test-repo",
 		UpstreamCaches:  []string{mockUpstream.URL},
-		TokenMgr:        NewTokenManager("ghcr.io", "test-repo/nix-cache", ""),
-		CacheIndex:      cacheIndex,
+		TokenMgr:        NewTokenManager(reg, "test-repo", ""),
 		HttpClient:      &http.Client{Timeout: 30 * time.Minute},
 		HttpShortClient: &http.Client{Timeout: 10 * time.Second},
 	}
@@ -96,24 +106,11 @@ func TestProxyServerEndpoints(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
 		t.Fatalf("Failed to decode status: %v", err)
 	}
-	if status["index_entries"].(float64) != 1 {
-		t.Errorf("Expected 1 entry, got %v", status["index_entries"])
+	if status["mode"] != "native" {
+		t.Errorf("Expected mode native, got %v", status["mode"])
 	}
 
-	// 4. Test /.narinfo lookup
-	req = httptest.NewRequest("GET", "/test-hash.narinfo", nil)
-	w = httptest.NewRecorder()
-	ps.Handler(w, req)
-
-	resp = w.Result()
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("Expected 200, got %d", resp.StatusCode)
-	}
-	if ct := resp.Header.Get("Content-Type"); ct != "text/x-nix-narinfo" {
-		t.Errorf("Expected Content-Type text/x-nix-narinfo, got %s", ct)
-	}
-
-	// 5. Test nonexistent .narinfo
+	// 4. Test nonexistent .narinfo (native lookup 404s, upstream 404s)
 	req = httptest.NewRequest("GET", "/nonexistent.narinfo", nil)
 	w = httptest.NewRecorder()
 	ps.Handler(w, req)
@@ -122,7 +119,7 @@ func TestProxyServerEndpoints(t *testing.T) {
 		t.Errorf("Expected 404 for nonexistent narinfo, got %d", resp.StatusCode)
 	}
 
-	// 6. Test /nar/ streaming from upstream
+	// 5. Test /nar/ streaming from upstream
 	req = httptest.NewRequest("GET", "/nar/test-upstream-nar.nar.xz", nil)
 	w = httptest.NewRecorder()
 	ps.Handler(w, req)
@@ -182,18 +179,9 @@ func TestProxyServer_ServeNativeNarinfo(t *testing.T) {
 
 	reg := strings.TrimPrefix(mockRegistry.URL, "http://")
 
-	cacheIndex := &CacheIndex{
-		Data:                &CacheIndexData{Entries: map[string]IndexEntry{}},
-		NarLookups:          map[string]string{},
-		ManifestAnnotations: map[string]string{"aeroflare.backend": "native"},
-		LastFetch:           time.Now(),
-		IndexTTL:            5 * time.Minute,
-	}
-
 	ps := &ProxyServer{
 		Registry:        reg,
 		Repository:      "itzemoji2/cache-3",
-		CacheIndex:      cacheIndex,
 		TokenMgr:        NewTokenManager(reg, "itzemoji2/cache-3", ""),
 		HttpClient:      &http.Client{Timeout: 30 * time.Second},
 		HttpShortClient: &http.Client{Timeout: 10 * time.Second},
@@ -240,7 +228,7 @@ func TestBootstrapConfig(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"token": "mock-bearer-token"}`))
-		case "/v2/test-repo/nix-cache/manifests/cache-config":
+		case "/v2/test-repo/manifests/cache-config":
 			w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{
@@ -263,7 +251,7 @@ func TestBootstrapConfig(t *testing.T) {
 					}
 				]
 			}`))
-		case "/v2/test-repo/nix-cache/blobs/sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a":
+		case "/v2/test-repo/blobs/sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a":
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{}`))
 		default:
@@ -276,8 +264,8 @@ func TestBootstrapConfig(t *testing.T) {
 	u = strings.TrimPrefix(u, "http://")
 	u = strings.TrimPrefix(u, "https://")
 
-	tokenMgr := NewTokenManager(u, "test-repo/nix-cache", "")
-	conf, err := BootstrapConfig(context.Background(), nil, u, "test-repo/nix-cache", tokenMgr)
+	tokenMgr := NewTokenManager(u, "test-repo", "")
+	conf, err := BootstrapConfig(context.Background(), nil, u, "test-repo", tokenMgr)
 	if err != nil {
 		t.Fatalf("Failed to bootstrap config: %v", err)
 	}
@@ -307,8 +295,8 @@ func TestBootstrapConfig_ManifestNotFound(t *testing.T) {
 	defer mockRegistry.Close()
 
 	u := strings.TrimPrefix(mockRegistry.URL, "http://")
-	tokenMgr := NewTokenManager(u, "test-repo/nix-cache", "")
-	_, err := BootstrapConfig(context.Background(), nil, u, "test-repo/nix-cache", tokenMgr)
+	tokenMgr := NewTokenManager(u, "test-repo", "")
+	_, err := BootstrapConfig(context.Background(), nil, u, "test-repo", tokenMgr)
 	if err == nil {
 		t.Fatal("Expected error when manifest returns 404, got nil")
 	}
@@ -317,10 +305,9 @@ func TestBootstrapConfig_ManifestNotFound(t *testing.T) {
 // TestProxyHandler_MethodNotAllowed verifies that unsupported HTTP methods return 405.
 func TestProxyHandler_MethodNotAllowed(t *testing.T) {
 	ps := &ProxyServer{
-		CacheIndex:      &CacheIndex{},
 		HttpClient:      &http.Client{},
 		HttpShortClient: &http.Client{},
-		TokenMgr:        NewTokenManager("ghcr.io", "test/nix-cache", ""),
+		TokenMgr:        NewTokenManager("ghcr.io", "test", ""),
 	}
 
 	for _, method := range []string{"DELETE", "PUT", "PATCH"} {
@@ -336,10 +323,9 @@ func TestProxyHandler_MethodNotAllowed(t *testing.T) {
 // TestProxyHandler_UnknownGetPath verifies that GET requests for unknown paths return 404.
 func TestProxyHandler_UnknownGetPath(t *testing.T) {
 	ps := &ProxyServer{
-		CacheIndex:      &CacheIndex{},
 		HttpClient:      &http.Client{},
 		HttpShortClient: &http.Client{},
-		TokenMgr:        NewTokenManager("ghcr.io", "test/nix-cache", ""),
+		TokenMgr:        NewTokenManager("ghcr.io", "test", ""),
 	}
 
 	req := httptest.NewRequest("GET", "/unknown/path", nil)
@@ -350,39 +336,43 @@ func TestProxyHandler_UnknownGetPath(t *testing.T) {
 	}
 }
 
-// TestProxyHandler_UnknownPostPath verifies that POST requests for unknown paths return 404.
-func TestProxyHandler_UnknownPostPath(t *testing.T) {
+// TestProxyHandler_Post verifies that POST requests are rejected with 405: the
+// proxy is read-only (GET/HEAD), with no cache-refresh or write endpoints.
+func TestProxyHandler_Post(t *testing.T) {
 	ps := &ProxyServer{
-		CacheIndex:      &CacheIndex{},
 		HttpClient:      &http.Client{},
 		HttpShortClient: &http.Client{},
-		TokenMgr:        NewTokenManager("ghcr.io", "test/nix-cache", ""),
+		TokenMgr:        NewTokenManager("ghcr.io", "test", ""),
 	}
 
 	req := httptest.NewRequest("POST", "/unknown/post", nil)
 	w := httptest.NewRecorder()
 	ps.Handler(w, req)
-	if w.Result().StatusCode != http.StatusNotFound {
-		t.Errorf("Expected 404 for unknown POST path, got %d", w.Result().StatusCode)
+	if w.Result().StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("Expected 405 for POST, got %d", w.Result().StatusCode)
 	}
 }
 
-// TestProxyServer_ServePublicKey_NotFound verifies that /public-key returns 404 when no key is configured.
+// TestProxyServer_ServePublicKey_NotFound verifies that /public-key returns 404
+// when the registry has no cache-config manifest (so no key is configured).
 func TestProxyServer_ServePublicKey_NotFound(t *testing.T) {
-	cacheIndex := &CacheIndex{
-		Data: &CacheIndexData{
-			PublicKey: "", // No public key
-			Entries:   map[string]IndexEntry{},
-		},
-		NarLookups: map[string]string{},
-		LastFetch:  time.Now(),
-		IndexTTL:   5 * time.Minute,
-	}
+	mockRegistry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/token" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"token": "mock-token"}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer mockRegistry.Close()
+
+	reg := strings.TrimPrefix(mockRegistry.URL, "http://")
 	ps := &ProxyServer{
-		CacheIndex:      cacheIndex,
-		HttpClient:      &http.Client{},
-		HttpShortClient: &http.Client{},
-		TokenMgr:        NewTokenManager("ghcr.io", "test/nix-cache", ""),
+		Registry:        reg,
+		Repository:      "test",
+		HttpClient:      &http.Client{Timeout: 5 * time.Second},
+		HttpShortClient: &http.Client{Timeout: 5 * time.Second},
+		TokenMgr:        NewTokenManager(reg, "test", ""),
 	}
 
 	req := httptest.NewRequest("GET", "/public-key", nil)
@@ -393,20 +383,42 @@ func TestProxyServer_ServePublicKey_NotFound(t *testing.T) {
 	}
 }
 
-// TestProxyServer_ServePublicKey_FromServerField verifies that /public-key uses the PublicKey field when set directly.
-func TestProxyServer_ServePublicKey_FromServerField(t *testing.T) {
-	cacheIndex := &CacheIndex{
-		Data:                &CacheIndexData{Entries: map[string]IndexEntry{}},
-		NarLookups:          map[string]string{},
-		ManifestAnnotations: map[string]string{"public-key": "  server-configured-key  "},
-		LastFetch:           time.Now(),
-		IndexTTL:            5 * time.Minute,
-	}
+// TestProxyServer_ServePublicKey_FromCacheConfig verifies that /public-key reads
+// the key straight from the cache-config manifest annotations (trimming
+// surrounding whitespace), with no caching in between.
+func TestProxyServer_ServePublicKey_FromCacheConfig(t *testing.T) {
+	mockRegistry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v2/" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if r.URL.Path == "/token" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"token": "mock-token"}`))
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/manifests/cache-config") {
+			w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"schemaVersion": 2, "mediaType": "application/vnd.oci.image.manifest.v1+json", "config": {"digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a", "size": 2}, "layers": [], "annotations": {"public-key": "  server-configured-key  "}}`))
+			return
+		}
+		if strings.Contains(r.URL.Path, "/blobs/") {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer mockRegistry.Close()
+
+	reg := strings.TrimPrefix(mockRegistry.URL, "http://")
 	ps := &ProxyServer{
-		CacheIndex:      cacheIndex,
-		HttpClient:      &http.Client{},
-		HttpShortClient: &http.Client{},
-		TokenMgr:        NewTokenManager("ghcr.io", "test/nix-cache", ""),
+		Registry:        reg,
+		Repository:      "test",
+		HttpClient:      &http.Client{Timeout: 5 * time.Second},
+		HttpShortClient: &http.Client{Timeout: 5 * time.Second},
+		TokenMgr:        NewTokenManager(reg, "test", ""),
 	}
 
 	req := httptest.NewRequest("GET", "/public-key", nil)
@@ -422,123 +434,8 @@ func TestProxyServer_ServePublicKey_FromServerField(t *testing.T) {
 	}
 }
 
-// TestProxyServer_HandleRefresh_NoWorker_Success verifies /_refresh triggers a CacheIndex refresh via a mock registry.
-func TestProxyServer_HandleRefresh_NoWorker_Success(t *testing.T) {
-	mockRegistry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v2/" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		if r.URL.Path == "/token" {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"token": "refresh-token"}`))
-			return
-		}
-		if strings.HasSuffix(r.URL.Path, "/manifests/cache-index") {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"layers": [{"digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "size": 50}]}`))
-			return
-		}
-		if strings.HasSuffix(r.URL.Path, "/blobs/sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef") {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"entries": {"abc123": {"narinfo": "URL: nar/abc.nar.xz\n", "nar_digest": "sha256:abc"}}, "public_key": "refresh-key", "generated": "now"}`))
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer mockRegistry.Close()
-
-	tmpDir, err := os.MkdirTemp("", "aeroflare-refresh-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
-	reg := strings.TrimPrefix(mockRegistry.URL, "http://")
-	tokenMgr := NewTokenManager(reg, "test-repo/nix-cache", "")
-	cacheIndex := &CacheIndex{
-		IndexDir:   tmpDir,
-		IndexTTL:   5 * time.Minute,
-		TokenMgr:   tokenMgr,
-		Registry:   reg,
-		Repository: "test-repo/nix-cache",
-	}
-
-	ps := &ProxyServer{
-		CacheIndex:      cacheIndex,
-		HttpClient:      &http.Client{Timeout: 30 * time.Second},
-		HttpShortClient: &http.Client{Timeout: 10 * time.Second},
-		TokenMgr:        tokenMgr,
-	}
-
-	req := httptest.NewRequest("POST", "/_refresh", nil)
-	w := httptest.NewRecorder()
-	ps.Handler(w, req)
-	resp := w.Result()
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("Expected 200, got %d", resp.StatusCode)
-	}
-	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		t.Fatalf("Failed to decode response: %v", err)
-	}
-	t.Logf("Result: %v", result)
-	if result["refreshed"] != true {
-		t.Errorf("Expected refreshed=true, got %v", result["refreshed"])
-	}
-	entries, ok := result["entries"].(float64)
-	if !ok || entries != 1 {
-		t.Errorf("Expected entries=1, got %v", result["entries"])
-	}
-}
-
-// TestProxyServer_HandleRefresh_WithWorker verifies /_refresh proxies to the worker.
-
-// TestProxyServer_HandleRefresh_NoWorker_Error verifies /_refresh returns 500 when CacheIndex.ForceRefresh fails.
-func TestProxyServer_HandleRefresh_NoWorker_Error(t *testing.T) {
-	// Use a token manager pointing at a server that always errors
-	brokenRegistry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer brokenRegistry.Close()
-
-	reg := strings.TrimPrefix(brokenRegistry.URL, "http://")
-	tokenMgr := NewTokenManager(reg, "test-repo/nix-cache", "")
-	cacheIndex := &CacheIndex{
-		IndexDir:   os.TempDir(),
-		IndexTTL:   5 * time.Minute,
-		TokenMgr:   tokenMgr,
-		Registry:   reg,
-		Repository: "test-repo/nix-cache",
-	}
-
-	ps := &ProxyServer{
-		CacheIndex:      cacheIndex,
-		HttpClient:      &http.Client{Timeout: 5 * time.Second},
-		HttpShortClient: &http.Client{Timeout: 5 * time.Second},
-		TokenMgr:        tokenMgr,
-	}
-
-	req := httptest.NewRequest("POST", "/_refresh", nil)
-	w := httptest.NewRecorder()
-	ps.Handler(w, req)
-	resp := w.Result()
-	if resp.StatusCode != http.StatusInternalServerError {
-		t.Errorf("Expected 500 when refresh fails, got %d", resp.StatusCode)
-	}
-	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		t.Fatalf("Failed to decode response: %v", err)
-	}
-	if result["refreshed"] != false {
-		t.Errorf("Expected refreshed=false, got %v", result["refreshed"])
-	}
-	if result["error"] == nil || result["error"] == "" {
-		t.Error("Expected non-empty error field in response")
-	}
-}
-
-// TestProxyServer_ServeNar_BlobStream verifies that /nar/ streams from the OCI registry when digest is in index.
+// TestProxyServer_ServeNar_BlobStream verifies that /nar/ streams from the OCI
+// registry using the digest resolved from the native OCI manifest.
 func TestProxyServer_ServeNar_BlobStream(t *testing.T) {
 	narContent := []byte("fake-nar-blob-content")
 
@@ -546,6 +443,13 @@ func TestProxyServer_ServeNar_BlobStream(t *testing.T) {
 		if r.URL.Path == "/token" {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"token": "nar-token"}`))
+			return
+		}
+		// native mode: the NAR basename's store hash ("cached") is the image tag.
+		if strings.HasSuffix(r.URL.Path, "/manifests/cached") {
+			w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"layers": [{"digest": "sha256:narblob123"}]}`))
 			return
 		}
 		if strings.HasSuffix(r.URL.Path, "/blobs/sha256:narblob123") {
@@ -560,22 +464,10 @@ func TestProxyServer_ServeNar_BlobStream(t *testing.T) {
 
 	reg := strings.TrimPrefix(mockRegistry.URL, "http://")
 
-	cacheIndex := &CacheIndex{
-		Data: &CacheIndexData{
-			Entries: map[string]IndexEntry{},
-		},
-		NarLookups: map[string]string{
-			"cached.nar.xz": "sha256:narblob123",
-		},
-		LastFetch: time.Now(),
-		IndexTTL:  5 * time.Minute,
-	}
-
 	ps := &ProxyServer{
 		Registry:        reg,
-		Repository:      "test-repo/nix-cache",
-		CacheIndex:      cacheIndex,
-		TokenMgr:        NewTokenManager(reg, "test-repo/nix-cache", ""),
+		Repository:      "test-repo",
+		TokenMgr:        NewTokenManager(reg, "test-repo", ""),
 		HttpClient:      &http.Client{Timeout: 30 * time.Second},
 		HttpShortClient: &http.Client{Timeout: 10 * time.Second},
 		UpstreamCaches:  []string{},
@@ -604,18 +496,13 @@ func TestProxyServer_ServeNar_NotFound(t *testing.T) {
 	}))
 	defer mockUpstream.Close()
 
-	cacheIndex := &CacheIndex{
-		Data:       &CacheIndexData{Entries: map[string]IndexEntry{}},
-		NarLookups: map[string]string{},
-		LastFetch:  time.Now(),
-		IndexTTL:   5 * time.Minute,
-	}
+	reg, closeReg := newFallthroughRegistry(t)
+	defer closeReg()
 
 	ps := &ProxyServer{
-		Registry:        "ghcr.io",
-		Repository:      "test-repo/nix-cache",
-		CacheIndex:      cacheIndex,
-		TokenMgr:        NewTokenManager("ghcr.io", "test/nix-cache", ""),
+		Registry:        reg,
+		Repository:      "test-repo",
+		TokenMgr:        NewTokenManager(reg, "test", ""),
 		HttpClient:      &http.Client{Timeout: 30 * time.Second},
 		HttpShortClient: &http.Client{Timeout: 10 * time.Second},
 		UpstreamCaches:  []string{mockUpstream.URL},
@@ -642,18 +529,13 @@ func TestProxyServer_ServeNar_Upstream_Success(t *testing.T) {
 	}))
 	defer mockUpstream.Close()
 
-	cacheIndex := &CacheIndex{
-		Data:       &CacheIndexData{Entries: map[string]IndexEntry{}},
-		NarLookups: map[string]string{},
-		LastFetch:  time.Now(),
-		IndexTTL:   5 * time.Minute,
-	}
+	reg, closeReg := newFallthroughRegistry(t)
+	defer closeReg()
 
 	ps := &ProxyServer{
-		Registry:        "ghcr.io",
-		Repository:      "test-repo/nix-cache",
-		CacheIndex:      cacheIndex,
-		TokenMgr:        NewTokenManager("ghcr.io", "test/nix-cache", ""),
+		Registry:        reg,
+		Repository:      "test-repo",
+		TokenMgr:        NewTokenManager(reg, "test", ""),
 		HttpClient:      &http.Client{Timeout: 30 * time.Second},
 		HttpShortClient: &http.Client{Timeout: 10 * time.Second},
 		UpstreamCaches:  []string{mockUpstream.URL},
@@ -681,18 +563,13 @@ func TestProxyServer_ServeNar_Upstream_Interrupted(t *testing.T) {
 	}))
 	defer mockUpstream.Close()
 
-	cacheIndex := &CacheIndex{
-		Data:       &CacheIndexData{Entries: map[string]IndexEntry{}},
-		NarLookups: map[string]string{},
-		LastFetch:  time.Now(),
-		IndexTTL:   5 * time.Minute,
-	}
+	reg, closeReg := newFallthroughRegistry(t)
+	defer closeReg()
 
 	ps := &ProxyServer{
-		Registry:        "ghcr.io",
-		Repository:      "test-repo/nix-cache",
-		CacheIndex:      cacheIndex,
-		TokenMgr:        NewTokenManager("ghcr.io", "test/nix-cache", ""),
+		Registry:        reg,
+		Repository:      "test-repo",
+		TokenMgr:        NewTokenManager(reg, "test", ""),
 		HttpClient:      &http.Client{Timeout: 30 * time.Second},
 		HttpShortClient: &http.Client{Timeout: 10 * time.Second},
 		UpstreamCaches:  []string{mockUpstream.URL},
@@ -728,127 +605,12 @@ func TestProxyServer_ServeNar_Upstream_Interrupted(t *testing.T) {
 	}
 }
 
-// TestCacheIndex_UpdateInMemory_NarLookup verifies that updateInMemory correctly builds NarLookups from NarInfo.
-func TestCacheIndex_UpdateInMemory_NarLookup(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "aeroflare-index-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
-	indexJSON := `{
-		"entries": {
-			"hash1abc": {
-				"narinfo": "StorePath: /nix/store/hash1abc-foo\nURL: nar/hash1abc.nar.xz\nCompression: xz\n",
-				"nar_digest": "sha256:digest1abc"
-			},
-			"hash2def": {
-				"narinfo": "StorePath: /nix/store/hash2def-bar\nURL: nar/hash2def.nar",
-				"nar_digest": "sha256:digest2def"
-			},
-			"emptyfields": {
-				"narinfo": "",
-				"nar_digest": ""
-			}
-		},
-		"public_key": "test-key",
-		"generated": "2026-06-18"
-	}`
-
-	indexFile := filepath.Join(tmpDir, "cache-index.json")
-	if err := os.WriteFile(indexFile, []byte(indexJSON), 0644); err != nil {
-		t.Fatalf("Failed to write index file: %v", err)
-	}
-
-	ci := &CacheIndex{
-		IndexDir: tmpDir,
-		IndexTTL: 5 * time.Minute,
-	}
-
-	// loadLocal calls updateInMemory internally
-	// We need to expose loadLocal or test via Get() — but loadLocal is unexported.
-	// Use ForceRefresh via a mock registry is not practical here; instead test via proxy
-	// by pre-seeding the data and calling Get().
-
-	// Pre-seed using the exported Data field directly and verify NarLookups via Get
-	data := &CacheIndexData{
-		Entries: map[string]IndexEntry{
-			"hash1abc": {
-				NarInfo:   "StorePath: /nix/store/hash1abc-foo\nURL: nar/hash1abc.nar.xz\nCompression: xz\n",
-				NarDigest: "sha256:digest1abc",
-			},
-			"hash2def": {
-				NarInfo:   "StorePath: /nix/store/hash2def-bar\nURL: nar/hash2def.nar",
-				NarDigest: "sha256:digest2def",
-			},
-			"emptyfields": {
-				NarInfo:   "",
-				NarDigest: "",
-			},
-		},
-		PublicKey: "test-key",
-		Generated: "2026-06-18",
-	}
-	ci.Data = data
-	ci.NarLookups = map[string]string{
-		"hash1abc.nar.xz": "sha256:digest1abc",
-		"hash2def.nar":    "sha256:digest2def",
-	}
-	ci.LastFetch = time.Now()
-
-	indexData, narLookups := ci.Get(context.Background())
-
-	if len(indexData.Entries) != 3 {
-		t.Errorf("Expected 3 entries, got %d", len(indexData.Entries))
-	}
-	if digest, ok := narLookups["hash1abc.nar.xz"]; !ok || digest != "sha256:digest1abc" {
-		t.Errorf("Expected NarLookup for hash1abc.nar.xz, got %v", narLookups)
-	}
-	if digest, ok := narLookups["hash2def.nar"]; !ok || digest != "sha256:digest2def" {
-		t.Errorf("Expected NarLookup for hash2def.nar, got %v", narLookups)
-	}
-	if _, ok := narLookups[""]; ok {
-		t.Error("Empty NarInfo entries should not be added to NarLookups")
-	}
-}
-
-// TestCacheIndex_Get_ReturnsEmptyOnNilData verifies that Get() returns empty non-nil data when index is nil and refresh fails.
-func TestCacheIndex_Get_ReturnsEmptyOnNilData(t *testing.T) {
-	// Token manager pointing at a broken server so refresh will fail
-	brokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer brokenServer.Close()
-
-	reg := strings.TrimPrefix(brokenServer.URL, "http://")
-	tokenMgr := NewTokenManager(reg, "test-repo/nix-cache", "")
-	ci := &CacheIndex{
-		IndexDir:   os.TempDir(),
-		IndexTTL:   5 * time.Minute,
-		TokenMgr:   tokenMgr,
-		Registry:   reg,
-		Repository: "test-repo/nix-cache",
-		// Data is nil
-	}
-
-	indexData, narLookups := ci.Get(context.Background())
-	if indexData == nil {
-		t.Fatal("Get() should never return nil CacheIndexData")
-	}
-	if indexData.Entries == nil {
-		t.Error("Get() should return non-nil Entries map when data is nil")
-	}
-	if narLookups == nil {
-		t.Error("Get() should return non-nil NarLookups map when data is nil")
-	}
-}
-
 // TestTokenManager_GetToken_OciTokenEnv verifies that the oci_token env var bypasses fetching.
 func TestTokenManager_GetToken_OciTokenEnv(t *testing.T) {
 	t.Setenv("oci_token", "direct-oci-token-value")
 	t.Setenv("NIXCACHE_TOKEN", "")
 
-	tokenMgr := NewTokenManager("ghcr.io", "test/nix-cache", "")
+	tokenMgr := NewTokenManager("ghcr.io", "test", "")
 	token, err := tokenMgr.GetToken(context.Background())
 	if err != nil {
 		t.Fatalf("GetToken failed: %v", err)
@@ -875,7 +637,7 @@ func TestTokenManager_GetToken_OciTokenEnv_GhpPrefix(t *testing.T) {
 	defer mockRegistry.Close()
 
 	reg := strings.TrimPrefix(mockRegistry.URL, "http://")
-	tokenMgr := NewTokenManager(reg, "test/nix-cache", "")
+	tokenMgr := NewTokenManager(reg, "test", "")
 	token, err := tokenMgr.GetToken(context.Background())
 	if err != nil {
 		t.Fatalf("GetToken failed: %v", err)
@@ -894,7 +656,7 @@ func TestTokenManager_GetToken_NixcacheTokenEnv(t *testing.T) {
 	t.Setenv("oci_token", "")
 	t.Setenv("NIXCACHE_TOKEN", "nixcache-direct-token")
 
-	tokenMgr := NewTokenManager("ghcr.io", "test/nix-cache", "")
+	tokenMgr := NewTokenManager("ghcr.io", "test", "")
 	token, err := tokenMgr.GetToken(context.Background())
 	if err != nil {
 		t.Fatalf("GetToken failed: %v", err)
@@ -922,7 +684,7 @@ func TestTokenManager_GetToken_Cached(t *testing.T) {
 	defer mockRegistry.Close()
 
 	reg := strings.TrimPrefix(mockRegistry.URL, "http://")
-	tokenMgr := NewTokenManager(reg, "test/nix-cache", "")
+	tokenMgr := NewTokenManager(reg, "test", "")
 
 	// First call fetches
 	token1, err := tokenMgr.GetToken(context.Background())
@@ -963,7 +725,7 @@ func TestTokenManager_GetToken_WithGithubToken(t *testing.T) {
 	defer mockRegistry.Close()
 
 	reg := strings.TrimPrefix(mockRegistry.URL, "http://")
-	tokenMgr := NewTokenManager(reg, "test/nix-cache", "my-github-pat")
+	tokenMgr := NewTokenManager(reg, "test", "my-github-pat")
 	token, err := tokenMgr.GetToken(context.Background())
 	if err != nil {
 		t.Fatalf("GetToken with github token failed: %v", err)
@@ -979,10 +741,9 @@ func TestTokenManager_GetToken_WithGithubToken(t *testing.T) {
 // TestProxyServer_NixCacheInfo_Content verifies the exact content of the /nix-cache-info response.
 func TestProxyServer_NixCacheInfo_Content(t *testing.T) {
 	ps := &ProxyServer{
-		CacheIndex:      &CacheIndex{},
 		HttpClient:      &http.Client{},
 		HttpShortClient: &http.Client{},
-		TokenMgr:        NewTokenManager("ghcr.io", "test/nix-cache", ""),
+		TokenMgr:        NewTokenManager("ghcr.io", "test", ""),
 	}
 
 	req := httptest.NewRequest("GET", "/nix-cache-info", nil)
@@ -1011,18 +772,16 @@ func TestProxyServer_NarInfo_FallsBackToUpstream(t *testing.T) {
 	}))
 	defer mockUpstream.Close()
 
-	cacheIndex := &CacheIndex{
-		Data:       &CacheIndexData{Entries: map[string]IndexEntry{}},
-		NarLookups: map[string]string{},
-		LastFetch:  time.Now(),
-		IndexTTL:   5 * time.Minute,
-	}
+	reg, closeReg := newFallthroughRegistry(t)
+	defer closeReg()
+
 	ps := &ProxyServer{
-		CacheIndex:      cacheIndex,
+		Registry:        reg,
+		Repository:      "test",
 		UpstreamCaches:  []string{mockUpstream.URL},
 		HttpClient:      &http.Client{Timeout: 10 * time.Second},
 		HttpShortClient: &http.Client{Timeout: 10 * time.Second},
-		TokenMgr:        NewTokenManager("ghcr.io", "test/nix-cache", ""),
+		TokenMgr:        NewTokenManager(reg, "test", ""),
 	}
 
 	req := httptest.NewRequest("GET", "/upstream-hash.narinfo", nil)

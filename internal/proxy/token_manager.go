@@ -69,6 +69,11 @@ func (tm *TokenManager) GetToken(ctx context.Context) (string, error) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 
+	// A verbatim bearer token (from oci_token / NIXCACHE_TOKEN) is used as-is.
+	// For GHCR this is the base64-encoded PAT, which the registry accepts
+	// directly, skipping the /token exchange. NewTokenManager already rejects
+	// raw PAT values (ghp_/github_pat_/… prefixes) for this field, so only a
+	// properly-formed bearer reaches here.
 	if tm.overrideToken != "" {
 		return tm.overrideToken, nil
 	}

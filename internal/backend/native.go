@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"aeroflare/internal/cacheindex"
 	"aeroflare/internal/oci"
 	"aeroflare/internal/prepare/narinfo"
 
@@ -16,8 +15,7 @@ import (
 )
 
 // NativeBackend publishes each receipt as its own OCI image (one manifest
-// per Nix package, tagged with the store hash), as opposed to JSONBackend's
-// single shared index or R2Backend's blob storage.
+// per Nix package, tagged with the store hash).
 type NativeBackend struct {
 	cfg BackendConfig
 }
@@ -25,7 +23,7 @@ type NativeBackend struct {
 // PushReceipts pushes each receipt concurrently (bounded by a worker limit)
 // as an independent OCI image; a failure on one receipt does not stop the
 // others already in flight but is still returned to the caller.
-func (b *NativeBackend) PushReceipts(ctx context.Context, receipts []cacheindex.PushReceipt) error {
+func (b *NativeBackend) PushReceipts(ctx context.Context, receipts []PushReceipt) error {
 	// One shared pusher so all package image pushes reuse a single registry
 	// auth handshake instead of each repeating the /v2/ 401 challenge.
 	pusher, err := oci.NewImagePusher(b.cfg.Token)
@@ -34,7 +32,7 @@ func (b *NativeBackend) PushReceipts(ctx context.Context, receipts []cacheindex.
 	}
 
 	eg, _ := errgroup.WithContext(ctx)
-	eg.SetLimit(cacheindex.WorkerLimit(b.cfg.Workers, 5))
+	eg.SetLimit(workerLimit(b.cfg.Workers, 5))
 
 	for _, receipt := range receipts {
 		receipt := receipt

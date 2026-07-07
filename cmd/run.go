@@ -17,7 +17,6 @@ var runCmd = &cobra.Command{
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		registry, repository := oci.GetRegistryAndRepository()
-		indexDir := getIndexDir(repository)
 
 		cfg := &run.RunConfig{
 			Command: args,
@@ -26,7 +25,7 @@ var runCmd = &cobra.Command{
 		run.DisplaySummary(cfg)
 
 		token := getTokenForRegistry(registry)
-		targetPaths, err := run.ExecuteCommand(cfg, registry, repository, indexDir, token)
+		targetPaths, err := run.ExecuteCommand(cfg, registry, repository, token)
 		if err != nil {
 			PrintError(err.Error())
 			os.Exit(1)

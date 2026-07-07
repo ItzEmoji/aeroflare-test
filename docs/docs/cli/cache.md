@@ -68,5 +68,4 @@ The `proxy` command (`cmd/proxy.go`) initializes a local HTTP proxy server desig
 
 - `NIXCACHE_PORT` (default: `37515`): The TCP port the proxy binds to.
 - `NIXCACHE_LISTEN` (default: `127.0.0.1`): The interface address to listen on.
-- `NIXCACHE_INDEX_TTL` (default: `300`): Time-to-live for index entries.
 - `NIXCACHE_UPSTREAM` (default: `https://cache.nixos.org`): Space-separated list of upstream cache URLs.

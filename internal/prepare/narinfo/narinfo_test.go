@@ -80,8 +80,10 @@ func TestNarinfoEmptyReferences(t *testing.T) {
 	}
 
 	text := ni.String()
-	if !strings.Contains(text, "References:\n") {
-		t.Errorf("expected empty References line, got:\n%s", text)
+	// Must include the trailing space. Nix reads the value at (colon + 2), so a
+	// bare "References:\n" makes it swallow the following line as references.
+	if !strings.Contains(text, "References: \n") {
+		t.Errorf("expected empty References line with trailing space, got:\n%q", text)
 	}
 
 	parsed, err := Parse(text)
@@ -132,5 +134,68 @@ System: x86_64-linux`
 	}
 	if parsed.System != "x86_64-linux" {
 		t.Errorf("System: got %s", parsed.System)
+	}
+}
+
+// TestNarinfoOmitsEmptyDeriver is a regression test: a path with no deriver
+// (e.g. a fetched source) must NOT produce a bare "Deriver:" line. Nix parses
+// the Deriver value as a store-path basename and rejects an empty one with
+// "'Deriver:' is too short to be a valid store path".
+func TestNarinfoOmitsEmptyDeriver(t *testing.T) {
+	ni := &Narinfo{
+		StorePath:   "/nix/store/abc123-source",
+		URL:         "nar/abc123.nar.zst",
+		Compression: "zstd",
+		FileHash:    "sha256:0abcdefghijklmnopqrstuvwxyz0abcdefghijklmnopqrstuv",
+		FileSize:    100,
+		NarHash:     "sha256:1abcdefghijklmnopqrstuvwxyz1abcdefghijklmnopqrstuv",
+		NarSize:     200,
+		Deriver:     "", // no known deriver
+	}
+
+	out := ni.String()
+	if strings.Contains(out, "Deriver:") {
+		t.Errorf("empty deriver must be omitted entirely, got narinfo:\n%s", out)
+	}
+}
+
+// TestNarinfoEmptyReferencesDoesNotSwallowDeriver reproduces the real-world
+// failure: a path with no references but a known deriver. Emitting a bare
+// "References:\n" makes Nix's parser (which reads the value at colon+2) consume
+// the following "Deriver: ...drv" line as the references value, producing
+// "'Deriver:' is too short to be a valid store path". We emulate that parser
+// behaviour here to guard the emitted format.
+func TestNarinfoEmptyReferencesDoesNotSwallowDeriver(t *testing.T) {
+	ni := &Narinfo{
+		StorePath:   "/nix/store/3pc7cd7g77iwkaxc46bxiq7s75qql8rr-nvim-cmp-a1d50489",
+		URL:         "nar/3pc7cd7g77iwkaxc46bxiq7s75qql8rr.nar.zst",
+		Compression: "zstd",
+		FileHash:    "sha256:03x4pdc606r4zr3kf5p4l3yyhm7zd9qsqak6bpqy1508ass37cg0",
+		FileSize:    77613,
+		NarHash:     "sha256:0p2hr29k8cargnzrfnlfs2rnhyvxs83509n6992chani6bqcqdxv",
+		NarSize:     346480,
+		References:  nil,
+		Deriver:     "m72syzz2zbz9c0rbr7qralxlz4pjggql-nvim-cmp-a1d50489.drv",
+	}
+
+	out := ni.String()
+
+	// Emulate Nix nar-info.cc: for each line, value starts at (colon + 2).
+	for _, line := range strings.Split(out, "\n") {
+		colon := strings.IndexByte(line, ':')
+		if colon < 0 || !strings.HasPrefix(line, "References:") {
+			continue
+		}
+		if colon+2 > len(line) {
+			t.Fatalf("References line too short for Nix parser (would read past end): %q", line)
+		}
+		value := line[colon+2:]
+		for _, ref := range strings.Fields(value) {
+			// A store-path basename is hash(32) + '-' + name; anything shorter
+			// (like "Deriver:") is rejected by Nix as "too short".
+			if len(ref) < 33 || strings.Contains(ref, ":") {
+				t.Errorf("References value %q yields invalid store-path token %q (Deriver line swallowed)", value, ref)
+			}
+		}
 	}
 }

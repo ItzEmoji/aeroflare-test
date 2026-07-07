@@ -32,15 +32,84 @@ func RunWizard() (*InitConfig, error) {
 		return nil, err
 	}
 
+	if err := promptWorkerToken(cfg); err != nil {
+		return nil, err
+	}
+
 	return cfg, nil
 }
 
-// promptCoreSettings asks for cache name, registry, backend and git
-// provider. For each setting, a value already supplied via CLI flag /
-// config (read through viper) is used as-is and no prompt is shown for it;
-// only settings left unspecified are added to the interactive form.
+// promptWorkerToken optionally collects a registry token to embed in the Worker
+// (stored as the NIXCACHE_TOKEN secret). It is entirely optional: a public cache
+// needs no token, but a private cache — or anyone who wants the Worker to skip
+// GHCR's token exchange for lower latency — can supply one. When the common
+// ghcr.io + GitHub path already yielded a PAT, we offer to reuse it instead of
+// asking the user to paste a token again.
+func promptWorkerToken(cfg *InitConfig) error {
+	// A value supplied via flag/config is used as-is, no prompt.
+	if t := viper.GetString("worker-token"); t != "" {
+		cfg.WorkerToken = t
+		return nil
+	}
+
+	// The direct-bearer optimization (and the base64 encoding we apply when
+	// storing the secret) is GHCR-specific. Other registries don't accept a
+	// base64 credential as a bearer, so they always use the cached token
+	// exchange and we don't offer this prompt for them.
+	if cfg.Registry != "ghcr.io" {
+		return nil
+	}
+
+	// On the common ghcr.io + GitHub path the PAT doubles as the registry
+	// credential, so offer to reuse it instead of asking for another token.
+	reusable := cfg.GitToken
+
+	desc := "Lets the Worker reach private repos and skip GHCR's token exchange (faster). Skip for a public cache."
+	if reusable != "" {
+		desc = "Reuse your existing token so the Worker can reach private repos and skip GHCR's token exchange (faster). Skip for a public cache."
+	}
+
+	var wantToken bool
+	if err := huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Store a registry token on the Worker? (optional)").
+				Description(desc).
+				Value(&wantToken),
+		),
+	).WithTheme(AeroflareTheme()).Run(); err != nil {
+		return fmt.Errorf("wizard cancelled")
+	}
+
+	if !wantToken {
+		return nil
+	}
+
+	if reusable != "" {
+		cfg.WorkerToken = reusable
+		return nil
+	}
+
+	if err := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Worker registry token").
+				Description("A PAT with read:packages. Stored as the NIXCACHE_TOKEN Worker secret.").
+				EchoMode(huh.EchoModePassword).
+				Value(&cfg.WorkerToken).
+				Validate(notEmpty("Worker registry token")),
+		),
+	).WithTheme(AeroflareTheme()).Run(); err != nil {
+		return fmt.Errorf("wizard cancelled")
+	}
+	return nil
+}
+
+// promptCoreSettings asks for cache name, registry and git provider. For each
+// setting, a value already supplied via CLI flag / config (read through viper)
+// is used as-is and no prompt is shown for it; only settings left unspecified
+// are added to the interactive form.
 func promptCoreSettings(cfg *InitConfig) error {
-	var backend string
 	var gitProvider string
 
 	cacheURL := viper.GetString("cache-url")
@@ -73,14 +142,6 @@ func promptCoreSettings(cfg *InitConfig) error {
 
 	if registryVal != "" {
 		cfg.Registry = registryVal
-	}
-
-	backendVal := viper.GetString("backend")
-	if backendVal != "" {
-		if backendVal != "r2" && backendVal != "native" && backendVal != "oci" {
-			return fmt.Errorf("invalid backend configured: %s. Must be 'r2', 'native', or 'oci'", backendVal)
-		}
-		backend = backendVal
 	}
 
 	gitProviderVal := viper.GetString("git-provider")
@@ -119,18 +180,6 @@ func promptCoreSettings(cfg *InitConfig) error {
 	}
 
 	var secondaryFields []huh.Field
-	if backendVal == "" {
-		secondaryFields = append(secondaryFields, huh.NewSelect[string]().
-			Title("Index backend").
-			Description("How should the cache index be stored?").
-			Options(
-				huh.NewOption("Cloudflare R2 (recommended)", "r2"),
-				huh.NewOption("Native OCI Tags (experimental)", "native"),
-				huh.NewOption("JSON index stored in OCI", "oci"),
-			).
-			Value(&backend))
-	}
-
 	if gitProviderVal == "" {
 		secondaryFields = append(secondaryFields, huh.NewSelect[string]().
 			Title("Git integration").
@@ -154,7 +203,6 @@ func promptCoreSettings(cfg *InitConfig) error {
 		}
 	}
 
-	cfg.Backend = BackendType(backend)
 	cfg.GitProvider = GitProvider(gitProvider)
 	return nil
 }
@@ -311,15 +359,16 @@ func DisplaySummary(cfg *InitConfig) (bool, error) {
 		{Label: "Cache", Value: cfg.CacheName},
 		{Label: "Registry", Value: cfg.Registry},
 		{Label: "Repository", Value: cfg.Repository},
-		{Label: "Backend", Value: cfg.Backend.String()},
 		{Label: "Worker", Value: cfg.WorkerName},
-	}
-	if cfg.Backend == BackendR2 {
-		fields = append(fields, ui.BoxField{Label: "R2 Bucket", Value: cfg.R2Bucket})
 	}
 	if cfg.GitProvider != GitNone {
 		fields = append(fields, ui.BoxField{Label: "Git", Value: fmt.Sprintf("%s (%s)", cfg.GitProvider, cfg.GitUsername)})
 	}
+	workerToken := "none (anonymous)"
+	if cfg.WorkerToken != "" {
+		workerToken = "configured (private/faster)"
+	}
+	fields = append(fields, ui.BoxField{Label: "Worker token", Value: workerToken})
 
 	ui.PrintSummaryBox("Summary", fields)
 

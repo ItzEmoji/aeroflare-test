@@ -13,7 +13,7 @@ import (
 
 // deployWorkerViaAPI uploads a worker script to Cloudflare Workers using the
 // multipart "module upload" format, and returns the deployed script's tag.
-func deployWorkerViaAPI(cfAccountID, cfApiToken, workerName, scriptPath, compatDate string, vars map[string]string, r2Bucket string) (string, error) {
+func deployWorkerViaAPI(cfAccountID, cfApiToken, workerName, scriptPath, compatDate string, vars, secrets map[string]string) (string, error) {
 	scriptContent, err := os.ReadFile(scriptPath)
 	if err != nil {
 		return "", fmt.Errorf("read worker script: %w", err)
@@ -22,7 +22,8 @@ func deployWorkerViaAPI(cfAccountID, cfApiToken, workerName, scriptPath, compatD
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
-	// Build bindings from environment variables and R2 bucket.
+	// Build bindings from environment variables (plain text) and secrets
+	// (encrypted at rest, never returned by the API).
 	bindings := []map[string]interface{}{}
 	for k, v := range vars {
 		bindings = append(bindings, map[string]interface{}{
@@ -31,11 +32,11 @@ func deployWorkerViaAPI(cfAccountID, cfApiToken, workerName, scriptPath, compatD
 			"text": v,
 		})
 	}
-	if r2Bucket != "" {
+	for k, v := range secrets {
 		bindings = append(bindings, map[string]interface{}{
-			"type":        "r2_bucket",
-			"name":        "BUCKET",
-			"bucket_name": r2Bucket,
+			"type": "secret_text",
+			"name": k,
+			"text": v,
 		})
 	}
 
@@ -151,36 +152,4 @@ func getWorkersSubdomain(cfAccountID, cfApiToken string) string {
 		return result.Result.Subdomain
 	}
 	return ""
-}
-
-// createR2BucketViaAPI creates an R2 bucket. Returns nil if it already exists.
-func createR2BucketViaAPI(cfAccountID, cfApiToken, bucketName string) error {
-	payload, _ := json.Marshal(map[string]string{"name": bucketName})
-
-	req, err := http.NewRequest("POST",
-		fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/r2/buckets", cfAccountID),
-		bytes.NewReader(payload),
-	)
-	if err != nil {
-		return fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+cfApiToken)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("API request failed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(resp.Body)
-		if resp.StatusCode == 409 {
-			printInfo(fmt.Sprintf("R2 bucket '%s' already exists, continuing.", bucketName))
-			return nil
-		}
-		return fmt.Errorf("cloudflare API HTTP %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	return nil
 }

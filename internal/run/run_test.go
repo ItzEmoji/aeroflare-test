@@ -34,7 +34,7 @@ func TestExecuteCommand_EmptyCommand(t *testing.T) {
 	cfg := &RunConfig{
 		Command: []string{},
 	}
-	_, err := ExecuteCommand(cfg, "registry", "repo", "dir", "token")
+	_, err := ExecuteCommand(cfg, "registry", "repo", "token")
 	if err == nil {
 		t.Fatalf("Expected error for empty command, got nil")
 	}

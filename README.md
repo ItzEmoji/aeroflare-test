@@ -10,9 +10,9 @@ Aeroflare bridges the Nix ecosystem and standard container registries (such as G
 
 - **Stateless Proxying**: Retains zero local binary state. Streams `.nar` blobs directly from OCI.
 - **O(1) Manifest Lookups**: Tags artifacts directly with the 32-character Nix store path hash, enabling instantaneous lookups.
-- **Interactive Provisioning**: A built-in setup wizard for GitHub, GitLab, and Cloudflare R2 bucket configuration.
+- **Interactive Provisioning**: A built-in setup wizard for GitHub, GitLab, and Cloudflare Worker deployment.
 - **Execution Wrapper**: Run builds transparently with the `run` wrapper (`aeroflare run -- nix build`).
-- **Dual-Backend Support**: Use OCI registries for heavy NAR blobs and Cloudflare R2 for fast metadata (`narinfo`).
+- **Native OCI Storage**: Each package is one OCI image tagged with its store hash — NAR blobs as layers, `narinfo` as manifest annotations. No separate metadata store.
 
 ---
 
@@ -41,12 +41,10 @@ nix run github:ItzEmoji/aeroflare -- run -- nix build .#default --print-out-path
 │   ├── root.go         # Entry point, environment bindings
 │   ├── proxy.go        # Proxy CLI command definition
 │   ├── run.go          # CLI command for build wrapper
-│   └── ...             # Settings, auth, gc, and clean-index CLI commands
+│   └── ...             # Settings, auth, and push CLI commands
 ├── internal/           # Core logic packages (decoupled from Cobra/CLI)
 │   ├── oci/            # OCI registry transport: layers, pushers, auth, retry
-│   ├── r2/             # Cloudflare R2 / S3 client
-│   ├── cacheindex/     # JSON cache-index schema, update logic, and GC
-│   ├── backend/        # CacheBackend abstraction + JSON/native/R2 implementations
+│   ├── backend/        # CacheBackend abstraction + native OCI-tag implementation
 │   ├── auth/           # OAuth token flows, Device authorization
 │   ├── secrets/        # Credentials manager (keyring + plaintext fallback)
 │   ├── proxy/          # HTTP server, proxy handlers, token management

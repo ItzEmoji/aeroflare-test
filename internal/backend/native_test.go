@@ -1,7 +1,6 @@
 package backend
 
 import (
-	"aeroflare/internal/cacheindex"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -80,7 +79,7 @@ Sig: `
 	}
 	backend := &NativeBackend{cfg: cfg}
 
-	receipts := []cacheindex.PushReceipt{
+	receipts := []PushReceipt{
 		{
 			StorePath:   "/nix/store/11111111111111111111111111111111-test",
 			NarinfoPath: narinfoPath,

@@ -6,29 +6,6 @@ import (
 	"strings"
 )
 
-// BackendType represents the index storage backend.
-type BackendType string
-
-const (
-	BackendR2     BackendType = "r2"
-	BackendNative BackendType = "native"
-	BackendOCI    BackendType = "oci"
-)
-
-// String returns a human-readable label.
-func (b BackendType) String() string {
-	switch b {
-	case BackendR2:
-		return "Cloudflare R2"
-	case BackendNative:
-		return "Native OCI Tags"
-	case BackendOCI:
-		return "JSON index stored in OCI"
-	default:
-		return string(b)
-	}
-}
-
 // GitProvider represents the Git hosting provider for CI/CD integration.
 type GitProvider string
 
@@ -58,7 +35,6 @@ type InitConfig struct {
 	Registry   string
 	Repository string
 
-	Backend     BackendType
 	GitProvider GitProvider
 
 	CloudflareAccountID string
@@ -68,7 +44,13 @@ type InitConfig struct {
 	GitUsername string
 
 	WorkerName string
-	R2Bucket   string
+
+	// WorkerToken is an optional registry PAT stored on the Worker as the
+	// NIXCACHE_TOKEN secret. When set, the Worker uses it directly as the GHCR
+	// bearer token (skipping the token exchange: faster, fewer requests) and can
+	// reach private repositories. Empty means the Worker authenticates
+	// anonymously, which only works for public caches.
+	WorkerToken string
 
 	// Internal fields populated during provisioning.
 	OCIToken    string
@@ -77,29 +59,20 @@ type InitConfig struct {
 	GitCloneURL string // Clone URL (with embedded credentials) for pushing to the created git repository.
 }
 
-// DeriveDefaults populates computed fields (Repository, WorkerName, R2Bucket)
-// from the cache name, registry and backend the user already supplied.
-// Must be called after CacheName/Registry/Backend are set and before the
-// values are used elsewhere (e.g. by the credentials prompt or provisioning).
+// DeriveDefaults populates computed fields (Repository, WorkerName) from the
+// cache name and registry the user already supplied. Must be called after
+// CacheName/Registry are set and before the values are used elsewhere (e.g.
+// by the credentials prompt or provisioning).
 func (c *InitConfig) DeriveDefaults() {
 	c.CacheName = strings.ToLower(c.CacheName)
 
-	// Docker Hub allows "user/repo" style names directly; other registries
-	// (e.g. ghcr.io) get an explicit "/nix-cache" suffix appended.
-	if (c.Registry == "docker.io" || c.Registry == "index.docker.io" || c.Registry == "registry-1.docker.io") && strings.Contains(c.CacheName, "/") {
-		c.Repository = c.CacheName
-	} else {
-		c.Repository = fmt.Sprintf("%s/nix-cache", c.CacheName)
-	}
+	// The repository is the cache name exactly as it lives in the registry.
+	c.Repository = c.CacheName
 
-	// Worker and R2 bucket names can't contain "/", so slashes in the cache
-	// name (e.g. "user/repo") are flattened to hyphens.
+	// Worker names can't contain "/", so slashes in the cache name (e.g.
+	// "user/repo") are flattened to hyphens.
 	sanitized := strings.ReplaceAll(c.CacheName, "/", "-")
 	c.WorkerName = fmt.Sprintf("aeroflare-%s", sanitized)
-
-	if c.Backend == BackendR2 && c.R2Bucket == "" {
-		c.R2Bucket = fmt.Sprintf("%s-index", sanitized)
-	}
 }
 
 // Print helpers below give the setup wizard and provisioning pipeline a

@@ -1,51 +1,48 @@
 package backend
 
 import (
-	"aeroflare/internal/cacheindex"
-	"aeroflare/internal/r2"
 	"context"
 )
 
-// CacheBackend publishes completed pushes (nar + narinfo pairs) to wherever
-// the cache stores its index and blobs. Implementations: JSONBackend (a
-// single cache-index.json manifest), NativeBackend (one OCI image per
-// package), and R2Backend (blobs in R2 plus chunked manifests).
-type CacheBackend interface {
-	PushReceipts(ctx context.Context, receipts []cacheindex.PushReceipt) error
+// PushReceipt records the result of preparing and uploading a single store
+// path's NAR, so the backend can publish its narinfo/nar pair.
+type PushReceipt struct {
+	StorePath   string
+	NarinfoPath string
+	NarDigest   string
+	NarSize     int64
+	NarPath     string
+	Compression string // narinfo Compression value (e.g. "xz", "zstd")
+	IsRoot      bool
 }
 
-// BackendConfig holds the destination and credentials shared by all
-// CacheBackend implementations.
+// CacheBackend publishes completed pushes (nar + narinfo pairs) to the OCI
+// registry. The only implementation is NativeBackend, which publishes one OCI
+// image per package.
+type CacheBackend interface {
+	PushReceipts(ctx context.Context, receipts []PushReceipt) error
+}
+
+// BackendConfig holds the destination and credentials for the CacheBackend.
 type BackendConfig struct {
 	Registry          string
 	Repository        string
 	Token             string
 	PubKeyPath        string
 	ConfigAnnotations map[string]string
-	R2                *r2.R2Config
 	Workers           int
 }
 
-// NewCacheBackend selects a CacheBackend based on cfg: an R2 config with a
-// public URL forces the "r2" backend; otherwise the aeroflare.backend
-// annotation picks the backend, defaulting to "native".
+// NewCacheBackend returns the native OCI-tag backend.
 func NewCacheBackend(cfg BackendConfig) CacheBackend {
-	backendType := "native"
-	if cfg.ConfigAnnotations != nil {
-		if t := cfg.ConfigAnnotations["aeroflare.backend"]; t != "" {
-			backendType = t
-		}
-	}
-	if cfg.R2 != nil && cfg.R2.PublicURL != "" {
-		backendType = "r2"
-	}
+	return &NativeBackend{cfg: cfg}
+}
 
-	switch backendType {
-	case "json":
-		return &JSONBackend{cfg: cfg}
-	case "r2":
-		return &R2Backend{cfg: cfg}
-	default:
-		return &NativeBackend{cfg: cfg}
+// workerLimit returns workers if positive, otherwise def. Used to size push
+// concurrency instead of hardcoding a limit.
+func workerLimit(workers, def int) int {
+	if workers > 0 {
+		return workers
 	}
+	return def
 }

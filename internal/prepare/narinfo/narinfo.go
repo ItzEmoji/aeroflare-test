@@ -36,12 +36,19 @@ func (n *Narinfo) String() string {
 	if len(n.References) > 0 {
 		fmt.Fprintf(&b, "References: %s\n", strings.Join(n.References, " "))
 	} else {
-		b.WriteString("References:\n")
+		// Nix's narinfo parser reads a field's value starting at (colon + 2),
+		// unconditionally skipping one space after the colon. A bare
+		// "References:\n" with no trailing space makes the parser read the *next*
+		// line as the value, so it tokenizes e.g. "Deriver: ...drv" as references
+		// and fails with "'Deriver:' is too short to be a valid store path". The
+		// trailing space keeps the empty value on its own line.
+		b.WriteString("References: \n")
 	}
+	// Only emit Deriver when we have one. Omitting the line is how Nix itself
+	// represents "no known deriver" (e.g. fetched sources); a bare "Deriver:"
+	// would likewise be misparsed as a store-path basename.
 	if n.Deriver != "" {
 		fmt.Fprintf(&b, "Deriver: %s\n", n.Deriver)
-	} else {
-		b.WriteString("Deriver:\n")
 	}
 	if n.System != "" {
 		fmt.Fprintf(&b, "System: %s\n", n.System)

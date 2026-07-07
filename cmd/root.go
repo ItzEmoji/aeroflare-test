@@ -61,7 +61,6 @@ func initConfig() {
 			defaultConfig := []byte(`# Aeroflare Configuration
 # theme: catppuccin
 # cache-url: oci://docker.io/my-org/my-cache
-# backend: r2
 `)
 			if err := os.WriteFile(configFile, defaultConfig, 0644); err != nil {
 				PrintError("Could not write default config file: " + err.Error())

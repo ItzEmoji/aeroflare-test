@@ -45,9 +45,9 @@ func buildNixConfig(existing string, port int) string {
 // ExecuteCommand starts a proxy server, runs cfg.Command with the proxy
 // substituter set in NIX_CONFIG, captures stdout, and returns extracted Nix
 // store paths (lines starting with /nix/store/ and not prefixed with #).
-// The proxy is configured with the given registry, repository, indexDir, and
+// The proxy is configured with the given registry, repository, and
 // githubToken for cache interactions.
-func ExecuteCommand(cfg *RunConfig, registry, repository, indexDir, githubToken string) ([]string, error) {
+func ExecuteCommand(cfg *RunConfig, registry, repository, githubToken string) ([]string, error) {
 	if len(cfg.Command) == 0 {
 		return nil, fmt.Errorf("command is empty")
 	}
@@ -59,7 +59,7 @@ func ExecuteCommand(cfg *RunConfig, registry, repository, indexDir, githubToken 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	slog.SetDefault(logger)
 
-	port, err := proxy.StartProxy(ctx, 0, "127.0.0.1", registry, repository, indexDir, "", 300, []string{"https://cache.nixos.org"}, githubToken)
+	port, err := proxy.StartProxy(ctx, 0, "127.0.0.1", registry, repository, []string{"https://cache.nixos.org"}, githubToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start proxy: %w", err)
 	}

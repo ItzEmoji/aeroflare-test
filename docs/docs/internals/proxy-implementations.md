@@ -76,7 +76,7 @@ This variant eschews the central JSON index in favor of mapping Nix store paths 
     2. Root-level labels (common in older/non-standard tools).
     3. Fetches the image config blob (`manifest.config.digest`) and inspects the inner `config.Labels` or `config.labels`.
 
-### HTTP Handlers
+## HTTP Handlers
 
 - **`/*.narinfo`**:
   - Uses the requested store hash as the OCI image tag.
@@ -88,22 +88,3 @@ This variant eschews the central JSON index in favor of mapping Nix store paths 
   - Queries the OCI manifest for the store hash.
   - Reads the digest of the very first layer (`manifest.layers[0].digest`)—which represents the `.nar` file itself.
   - Fetches the blob using the digest and streams it to the client.
-
-## Variant: `no-webui-r2`
-
-This variant is a hybrid. It uses the same `cache-index` JSON artifact as `no-webui-json` for locating `.nar` blobs, but offloads `.narinfo` storage to Cloudflare R2 object storage.
-
-### Mechanics
-
-- **`getIndex(env, ctx)`**: Identical to `no-webui-json`. Fetches and caches the `cache-index.json` from the OCI registry to locate NAR blobs.
-
-### HTTP Handlers
-
-- **`/*.narinfo`**:
-  - Requires the `BUCKET` environment variable binding.
-  - Maps the path directly to an R2 object key: `narinfo/` + `filename`.
-  - Performs a direct `env.BUCKET.get(objectKey)` and returns the body as `text/x-nix-narinfo`. 
-  - This avoids pulling or parsing the monolithic JSON index purely to resolve metadata requests.
-
-- **`/nar/*`**:
-  - Identical to `no-webui-json`. Uses `findNarDigest(index, narBasename)` against the JSON index to locate the OCI layer digest and fetch the `.nar` blob from the registry.

@@ -20,17 +20,15 @@ These files are deliberately kept thin. They are responsible for parsing flags, 
 * `run.go`: Maps to `aeroflare run`. Starts the ephemeral proxy and wraps the Nix command.
 * `init.go` / `configure.go` / `settings.go`: Maps to the interactive wizards (`aeroflare init` and `aeroflare settings`). These invoke the `huh` TUI forms.
 * `auth*.go`: Handles all `aeroflare auth` subcommands, routing credential resolution to the `internal/secrets` package.
-* `push.go` / `gc.go`: CLI bindings for cache mutation commands.
+* `push.go`: CLI binding for the cache push command.
 
 ## The `internal/` Directory (Core Logic)
 
-This is where the actual magic happens. The logic is heavily decoupled so that network operations, local file preparations, and proxying do not depend on CLI state. The storage-facing packages form a strict dependency layering — `backend` → `cacheindex` → `oci`, with `r2` as an independent peer — so lower layers never import the ones above them.
+This is where the actual magic happens. The logic is heavily decoupled so that network operations, local file preparations, and proxying do not depend on CLI state. The storage-facing packages form a strict dependency layering — `backend` → `oci` — so lower layers never import the ones above them.
 
-### 1. Networking, Storage & Cache Index
-* `internal/oci/`: **The most critical package in the project.** It implements the OCI network layer (`network.go`), using `google/go-containerregistry` to stream `.nar` blobs as OCI layers and map Nix `.narinfo` metadata onto OCI Manifest Annotations (`vnd.aeroflare.nar.*`). It also owns registry auth/token exchange (`token.go`), annotation parsing (`oci.go`), and HTTP retry (`retry.go`).
-* `internal/r2/`: Cloudflare R2 / S3 client for interacting with R2's S3-compatible endpoints when an OCI registry is not being used.
-* `internal/cacheindex/`: The remote cache index (`index.go`) — a manifest of known hashes that avoids repeated network lookups — plus BFS-based garbage collection (`gc.go`).
-* `internal/backend/`: The `CacheBackend` abstraction and its three implementations (`json.go`, `native.go`, `r2.go`), selected at runtime by `NewCacheBackend` to publish completed pushes.
+### 1. Networking & Storage
+* `internal/oci/`: **The most critical package in the project.** It implements the OCI network layer (`network.go`), using `google/go-containerregistry` to stream `.nar` blobs as OCI layers and map Nix `.narinfo` metadata onto OCI Manifest Annotations (`vnd.aeroflare.nar.*`). It also owns registry auth/token exchange (`token.go`), annotation parsing (`oci.go`), HTTP retry (`retry.go`), and writing the `cache-config` manifest (`config_manifest.go`).
+* `internal/backend/`: The `CacheBackend` abstraction and its `NativeBackend` implementation (`native.go`), which publishes each completed push as its own OCI image. Also defines the `PushReceipt` type threaded through the push pipeline.
 
 ### 2. The Proxy Server
 * `internal/proxy/`: Contains the HTTP server logic that tricks the Nix daemon into thinking it's talking to a standard binary cache.
@@ -54,7 +52,7 @@ This is where the actual magic happens. The logic is heavily decoupled so that n
 * `internal/auth/`: Implements OAuth flows and token validation with remote providers (e.g., verifying a GitHub PAT has `write:packages` scopes).
 
 ### 6. Wizards & UI
-* `internal/init/`: Contains the complex infrastructure provisioning logic. It talks directly to the Cloudflare API to provision R2 buckets and Edge Workers based on user selections.
+* `internal/init/`: Contains the complex infrastructure provisioning logic. It talks directly to the Cloudflare API to provision Edge Workers based on user selections.
 * `internal/ui/`: Shared terminal UI components (progress bars, spinners, and customized `huh` themes) used across the CLI.
 
 ---

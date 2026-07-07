@@ -6,7 +6,7 @@ sidebar_position: 2
 
 # Core Subsystems
 
-This document provides a deep technical breakdown of the core subsystems within Aeroflare: Authentication & Secrets, Storage Integration (R2), and the Push Pipeline. It is intended for developers and contributors to understand the mechanics of these systems.
+This document provides a deep technical breakdown of the core subsystems within Aeroflare: Authentication & Secrets, Storage Integration, and the Push Pipeline. It is intended for developers and contributors to understand the mechanics of these systems.
 
 ## Authentication & Secrets Management
 
@@ -36,18 +36,13 @@ The `secrets.Manager` interface abstracts credential storage.
 - **Fallback Mechanism:** If the keychain is unavailable (e.g., in CI environments or headless servers), it gracefully falls back to plain-text JSON storage in `~/.config/aeroflare/secrets.json`.
 - An internal `_keys_index` is maintained to keep track of which keys are managed by Aeroflare.
 
-## Storage Integration (Cloudflare R2)
+## Storage Integration
 
-Aeroflare natively supports dual-backend storage, utilizing OCI registries for heavy blobs (NARs) and Cloudflare R2 (or any S3-compatible API) for metadata (`narinfo`).
-
-### R2 Configuration (`internal/r2/r2.go`)
-Configuration is resolved via environment variables (`R2_BUCKET`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`) or dynamically via OCI manifest annotations (e.g., `aeroflare.r2.bucket`).
-The system uses the AWS SDK v2 (`aws-sdk-go-v2/service/s3`) with `UsePathStyle = true` to communicate with the endpoint.
-
-### Narinfo Uploads
-- The `UploadNarinfo` function reads the `.narinfo` file and uploads it directly to the root of the R2 bucket.
-- The object key is constructed using just the hash of the store path (`<hash>.narinfo`).
-- It strictly sets the `ContentType` to `text/x-nix-narinfo` to ensure compatibility with standard Nix HTTP binary caches.
+Aeroflare stores everything in an OCI registry. Each Nix package is published as
+its own OCI image, tagged with its store hash: the compressed `.nar` is the
+image's layer, and the `.narinfo` metadata is carried in the manifest
+annotations (`vnd.aeroflare.nar.*`). There is no separate metadata store to
+provision or keep in sync.
 
 ## The Push Pipeline (`internal/push/push.go`)
 
@@ -67,9 +62,9 @@ The upload phase uses `golang.org/x/sync/errgroup` to execute uploads concurrent
 To achieve maximum performance, Aeroflare employs a "brutal speed" optimization:
 - `network.NewLayerFast` creates the OCI layer representation without reading and hashing the entire NAR file on disk beforehand. It relies on the pre-computed size and hash from the `.narinfo` file.
 
-### Dual-Strategy Pushing
-Depending on the cache index annotations (`aeroflare.backend = native`), the push operation selects its strategy:
-1. **Native OCI Push**: Uses `network.PushNarPackage` to push the artifact using OCI standard manifest layouts.
-2. **Legacy Fallback**: Uses `network.PushLayer` as a fallback or for generic registries to push the blob directly.
-
-After the blobs are pushed, the `.narinfo` is uploaded either to the OCI registry as a blob or to the configured R2 bucket. Finally, the remote cache index is updated with the new receipts.
+### Native OCI Push
+Each receipt is published as its own OCI image via `network.PushNarPackage`,
+using standard OCI manifest layouts: the compressed `.nar` becomes the image
+layer, and the `.narinfo` fields are written as `vnd.aeroflare.nar.*` manifest
+annotations. The image is tagged with the package's store hash, giving O(1)
+lookups on subsequent fetches.

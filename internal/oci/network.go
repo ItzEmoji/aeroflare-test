@@ -155,7 +155,7 @@ func NewLayerFast(filePath string, mediaType types.MediaType, ni *narinfo.Narinf
 }
 
 // PushBlob natively hashes and streams a file to any OCI registry.
-// repository should be the full repository path (e.g. "itzemoji/nix-cache-test/nix-cache")
+// repository should be the full repository path (e.g. "itzemoji/nix-cache-test")
 func PushBlob(filePath, registry, repository, token string) (string, error) {
 	layer, digestStr, err := NewLayer(filePath, "")
 	if err != nil {
@@ -248,7 +248,7 @@ func NewImagePusher(token string) (*remote.Pusher, error) {
 }
 
 // PullBlob fetches a blob from any OCI registry and writes it to outFile.
-// repository should be the full repository path (e.g. "itzemoji/nix-cache-test/nix-cache")
+// repository should be the full repository path (e.g. "itzemoji/nix-cache-test")
 func PullBlob(digest, outFile, registry, repository, token string) error {
 	opts := []name.Option{}
 	if GetProtocol(registry) == "http" {
@@ -451,29 +451,6 @@ func PushNarPackagesBatch(registry, repository, token string, jobs []PushJob, ma
 	}
 
 	return eg.Wait()
-}
-
-// DeleteTag deletes a tag from the OCI registry.
-func DeleteTag(tag, registry, repository, token string) error {
-	opts := []name.Option{}
-	if GetProtocol(registry) == "http" {
-		opts = append(opts, name.Insecure)
-	}
-
-	refStr := fmt.Sprintf("%s/%s:%s", registry, repository, tag)
-	ref, err := name.NewTag(refStr, opts...)
-	if err != nil {
-		return err
-	}
-
-	remoteOpts := []remote.Option{
-		remote.WithTransport(optimizedTransport),
-	}
-	if token != "" {
-		remoteOpts = append(remoteOpts, remote.WithAuth(&authn.Bearer{Token: token}))
-	}
-
-	return remote.Delete(ref, remoteOpts...)
 }
 
 // GetProtocol chooses http for localhost/loopback registries (e.g. mock

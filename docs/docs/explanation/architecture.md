@@ -11,7 +11,7 @@ Aeroflare is designed to map the standard Nix Binary Cache protocol directly ont
 
 1. **Proxy Daemon (`aeroflare run` or `aeroflare proxy`)**: Intercepts HTTP requests from the local Nix daemon for `.narinfo` files and `.nar` blobs.
 2. **OCI Network Layer**: Translates Nix metadata into OCI registry primitives (Manifests and Layers).
-3. **Provisioning Wizard**: Configures upstream infrastructure (Cloudflare R2 or GitHub Container Registry) natively.
+3. **Provisioning Wizard**: Configures upstream infrastructure (GitHub Container Registry and a Cloudflare Worker) natively.
 
 ## Nix Substitution Sequence Diagram
 

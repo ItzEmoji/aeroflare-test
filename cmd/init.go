@@ -14,7 +14,6 @@ var initCmd = &cobra.Command{
 	Long: `Run the Aeroflare setup wizard to provision all required infrastructure:
 
   • OCI repository for storing cache data
-  • Cloudflare R2 bucket (if selected)
   • Cloudflare Worker deployment
   • Git repository and CI/CD integration (if selected)
 
@@ -33,12 +32,10 @@ any changes. No infrastructure is created until you confirm.`,
 			return
 		}
 
-		// Ensure Cloudflare tokens exist if needed (they're needed for provision)
-		if cfg.Backend == setup.BackendR2 {
-			cfToken, cfID := RequireCloudflareToken()
-			_ = os.Setenv("CLOUDFLARE_API_TOKEN", cfToken)
-			_ = os.Setenv("CLOUDFLARE_ACCOUNT_ID", cfID)
-		}
+		// Cloudflare tokens are always needed to deploy the Worker.
+		cfToken, cfID := RequireCloudflareToken()
+		_ = os.Setenv("CLOUDFLARE_API_TOKEN", cfToken)
+		_ = os.Setenv("CLOUDFLARE_ACCOUNT_ID", cfID)
 
 		// Ensure Github token exists if they need GitHub Actions / Registry
 		if cfg.Registry == "ghcr.io" || cfg.GitProvider == setup.GitGitHub {

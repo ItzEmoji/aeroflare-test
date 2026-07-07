@@ -49,7 +49,7 @@ func TestExchangeToken(t *testing.T) {
 	defer mockRegistry.Close()
 
 	u := strings.TrimPrefix(mockRegistry.URL, "http://")
-	token, err := ExchangeToken(u, "test-repo/nix-cache", "token", "my-basic-auth-pat")
+	token, err := ExchangeToken(u, "test-repo", "token", "my-basic-auth-pat")
 	if err != nil {
 		t.Fatalf("ExchangeToken failed: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestExchangeToken_Error(t *testing.T) {
 	defer mockRegistry.Close()
 
 	u := strings.TrimPrefix(mockRegistry.URL, "http://")
-	_, err := ExchangeToken(u, "test-repo/nix-cache", "token", "bad-token")
+	_, err := ExchangeToken(u, "test-repo", "token", "bad-token")
 	if err == nil {
 		t.Fatal("Expected error for 401 response, got nil")
 	}
@@ -254,7 +254,7 @@ func TestExchangeToken_UsesHttpForLocalhost(t *testing.T) {
 
 	u := strings.TrimPrefix(ts.URL, "http://")
 
-	token, err := ExchangeToken(u, "my-org/nix-cache", "token", "test-pat")
+	token, err := ExchangeToken(u, "my-org", "token", "test-pat")
 	if err != nil {
 		t.Fatalf("ExchangeToken failed for localhost registry: %v", err)
 	}

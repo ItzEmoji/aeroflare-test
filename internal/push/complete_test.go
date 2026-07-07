@@ -3,7 +3,7 @@ package push
 import (
 	"testing"
 
-	"aeroflare/internal/cacheindex"
+	"aeroflare/internal/backend"
 	"aeroflare/internal/prepare/prepare"
 )
 
@@ -13,7 +13,7 @@ func TestCompleteReceipts_ExcludesEntriesWithFailedRefs(t *testing.T) {
 	rootA := &prepare.Result{StorePath: "/nix/store/aaaa-rootA", MissingRefResults: []*prepare.Result{refB}}
 	rootC := &prepare.Result{StorePath: "/nix/store/cccc-rootC"}
 
-	byPath := map[string]cacheindex.PushReceipt{
+	byPath := map[string]backend.PushReceipt{
 		"/nix/store/aaaa-rootA": {StorePath: "/nix/store/aaaa-rootA", IsRoot: true},
 		"/nix/store/cccc-rootC": {StorePath: "/nix/store/cccc-rootC", IsRoot: true},
 		// refB has no receipt: its upload failed.
@@ -35,7 +35,7 @@ func TestCompleteReceipts_TransitiveFailurePoisonsAncestors(t *testing.T) {
 	refB := &prepare.Result{StorePath: "/nix/store/bbbb-refB", MissingRefResults: []*prepare.Result{refC}}
 	rootA := &prepare.Result{StorePath: "/nix/store/aaaa-rootA", MissingRefResults: []*prepare.Result{refB}}
 
-	byPath := map[string]cacheindex.PushReceipt{
+	byPath := map[string]backend.PushReceipt{
 		"/nix/store/aaaa-rootA": {StorePath: "/nix/store/aaaa-rootA", IsRoot: true},
 		"/nix/store/bbbb-refB":  {StorePath: "/nix/store/bbbb-refB"},
 	}
@@ -54,7 +54,7 @@ func TestCompleteReceipts_AllCompleteIncludesEverything(t *testing.T) {
 	refB := &prepare.Result{StorePath: "/nix/store/bbbb-refB"}
 	rootA := &prepare.Result{StorePath: "/nix/store/aaaa-rootA", MissingRefResults: []*prepare.Result{refB}}
 
-	byPath := map[string]cacheindex.PushReceipt{
+	byPath := map[string]backend.PushReceipt{
 		"/nix/store/aaaa-rootA": {StorePath: "/nix/store/aaaa-rootA", IsRoot: true},
 		"/nix/store/bbbb-refB":  {StorePath: "/nix/store/bbbb-refB"},
 	}

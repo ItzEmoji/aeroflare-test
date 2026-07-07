@@ -221,7 +221,7 @@ main = "worker.js"
 compatibility_date = "2024-12-01"
 
 [vars]
-# Repository path, exactly as it lives in the registry (including /nix-cache).
+# Repository path, exactly as it lives in the registry.
 NIXCACHE_REPO = "%s"
 # Registry base URL WITH scheme but WITHOUT /v2 (the worker adds the spec's /v2).
 NIXCACHE_REGISTRY_URL = "%s"
