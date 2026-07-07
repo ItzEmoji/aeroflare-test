@@ -1,6 +1,6 @@
 ## aeroflare auth remove
 
-Remove a stored credential (github, gitlab, cloudflare, oci <host>)
+Remove a stored credential (github, gitlab, cloudflare, oci &lt;host&gt;)
 
 ### Synopsis
 

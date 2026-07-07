@@ -1,15 +1,15 @@
 ## aeroflare auth set
 
-Save a credential for a known service (github, gitlab, cloudflare, oci <host>)
+Save a credential for a known service (github, gitlab, cloudflare, oci &lt;host&gt;)
 
 ### Synopsis
 
 Save a credential for a service aeroflare understands.
 
 Examples:
-  aeroflare auth set github <token>
-  aeroflare auth set cloudflare <api-token> <account-id>
-  aeroflare auth set oci registry.example.com <username> <token>
+  aeroflare auth set github &lt;token&gt;
+  aeroflare auth set cloudflare &lt;api-token&gt; &lt;account-id&gt;
+  aeroflare auth set oci registry.example.com &lt;username&gt; &lt;token&gt;
 
 With no values, you are prompted for each field (requires a terminal).
 
