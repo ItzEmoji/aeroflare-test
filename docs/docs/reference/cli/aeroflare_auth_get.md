@@ -1,15 +1,27 @@
-## aeroflare auth import
+## aeroflare auth get
 
-Import credentials from other CLIs (gh, glab, docker)
+Print a stored credential value (for scripting)
+
+### Synopsis
+
+Print the raw stored value of a credential to stdout, for use in scripts.
+
+Examples:
+  aeroflare auth get github
+  aeroflare auth get cloudflare account_id
+  aeroflare auth get oci registry.example.com token
+
+For a multi-field service with no field given, each field is printed as
+"name=value".
 
 ```
-aeroflare auth import [flags]
+aeroflare auth get <service> [field] [flags]
 ```
 
 ### Options
 
 ```
-  -h, --help   help for import
+  -h, --help   help for get
 ```
 
 ### Options inherited from parent commands
