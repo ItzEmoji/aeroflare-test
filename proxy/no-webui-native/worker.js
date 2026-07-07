@@ -263,7 +263,7 @@ export default {
         });
       }
 
-      if (path === "/public-key" || path === "/api/public-key") {
+      if (path === "/api/public-key") {
         return handlePublicKey(env);
       }
 
