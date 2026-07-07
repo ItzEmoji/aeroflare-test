@@ -1,7 +1,7 @@
 package main
 
 import (
-	"aeroflare/cmd"
+	"github.com/itzemoji/aeroflare/cmd"
 	_ "embed"
 )
 

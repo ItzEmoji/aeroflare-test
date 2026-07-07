@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 
-	network "aeroflare/src"
-	"aeroflare/src/proxy"
+	"github.com/itzemoji/aeroflare/internal/oci"
+	"github.com/itzemoji/aeroflare/internal/proxy"
+
 	"github.com/spf13/cobra"
 )
 
@@ -19,8 +19,11 @@ var proxyCmd = &cobra.Command{
 	Use:   "proxy",
 	Short: "Start the cache proxy server",
 	Run: func(cmd *cobra.Command, args []string) {
-		registry, repository := network.GetRegistryAndRepository()
+		registry, repository := oci.GetRegistryAndRepository()
 
+		// Settings below are read from NIXCACHE_* env vars rather than flags so
+		// the proxy can be configured the same way whether it's run directly
+		// or deployed as a systemd service / container.
 		port := 37515
 		if pStr := os.Getenv("NIXCACHE_PORT"); pStr != "" {
 			if p, err := strconv.Atoi(pStr); err == nil {
@@ -33,13 +36,6 @@ var proxyCmd = &cobra.Command{
 			listenAddr = "127.0.0.1"
 		}
 
-		indexTTL := 300
-		if ttlStr := os.Getenv("NIXCACHE_INDEX_TTL"); ttlStr != "" {
-			if t, err := strconv.Atoi(ttlStr); err == nil {
-				indexTTL = t
-			}
-		}
-
 		var upstreams []string
 		if ups := os.Getenv("NIXCACHE_UPSTREAM"); ups != "" {
 			upstreams = strings.Fields(ups)
@@ -47,11 +43,11 @@ var proxyCmd = &cobra.Command{
 			upstreams = []string{"https://cache.nixos.org"}
 		}
 
-		indexDir := getIndexDir(repository)
-
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
+		// Cancel the proxy's context on SIGINT/SIGTERM so StartProxy can shut
+		// down its listener cleanly instead of the process being killed mid-request.
 		c := make(chan os.Signal, 1)
 		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 		go func() {
@@ -60,7 +56,7 @@ var proxyCmd = &cobra.Command{
 		}()
 
 		token := getOptionalTokenForRegistry(registry)
-		actualPort, err := proxy.StartProxy(ctx, port, listenAddr, registry, repository, indexDir, "", indexTTL, upstreams, token)
+		actualPort, err := proxy.StartProxy(ctx, port, listenAddr, registry, repository, upstreams, token)
 		if err != nil {
 			PrintError(fmt.Sprintf("Proxy server failed: %v", err))
 			os.Exit(1)
@@ -73,24 +69,4 @@ var proxyCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(proxyCmd)
-}
-
-func getIndexDir(repository string) string {
-	indexDir := os.Getenv("AEROFLARE_INDEX_DIR")
-	if indexDir == "" {
-		indexDir = os.Getenv("NIXCACHE_INDEX_DIR")
-	}
-	if indexDir == "" {
-		if cacheDir := os.Getenv("CACHE_DIRECTORY"); cacheDir != "" {
-			indexDir = cacheDir
-		} else {
-			home, err := os.UserHomeDir()
-			if err != nil {
-				home = os.TempDir()
-			}
-			repoSlug := strings.ReplaceAll(repository, "/", "--")
-			indexDir = filepath.Join(home, ".cache", "aeroflare-proxy", repoSlug)
-		}
-	}
-	return indexDir
 }

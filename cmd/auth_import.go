@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -8,9 +9,30 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/itzemoji/aeroflare/internal/auth"
 
 	"github.com/spf13/cobra"
 )
+
+// githubScopeWarning returns a human-readable warning if the given GitHub
+// token is missing scopes aeroflare needs (e.g. write:packages for GHCR
+// pushes), or "" if the token is fine or could not be checked. It delegates to
+// the catalog's live validation so scope knowledge lives in one place.
+func githubScopeWarning(token string) string {
+	svc, ok := auth.ServiceByID("github")
+	if !ok || svc.Validate == nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	id, err := svc.Validate(ctx, map[string]string{"token": token})
+	if err != nil || len(id.Warnings) == 0 {
+		return ""
+	}
+	return " (⚠️ Warning: " + strings.Join(id.Warnings, "; ") + ")"
+}
 
 var authImportCmd = &cobra.Command{
 	Use:   "import",
@@ -26,19 +48,7 @@ var authImportCmd = &cobra.Command{
 				token := strings.TrimSpace(string(out))
 				if token != "" {
 					if err := manager.Set("github-token", token); err == nil {
-						msg := "✅ Imported GitHub token from gh CLI"
-						if _, scopes := getGithubUser(token); scopes != nil {
-							hasWritePackages := false
-							for _, s := range scopes {
-								if s == "write:packages" {
-									hasWritePackages = true
-									break
-								}
-							}
-							if !hasWritePackages {
-								msg += " (⚠️ Warning: Token is missing 'write:packages' scope, pushing to GHCR will fail)"
-							}
-						}
+						msg := "✅ Imported GitHub token from gh CLI" + githubScopeWarning(token)
 						fmt.Println(msg)
 						imported++
 					}
@@ -60,7 +70,9 @@ var authImportCmd = &cobra.Command{
 			}
 		}
 
-		// 3. Docker CLI
+		// 3. Docker CLI. `docker login` stores one base64("user:pass") blob per
+		// registry host in ~/.docker/config.json; decode each and import it as
+		// an OCI username/token pair for that registry.
 		homeDir, err := os.UserHomeDir()
 		if err == nil {
 			dockerConfigPath := filepath.Join(homeDir, ".docker", "config.json")

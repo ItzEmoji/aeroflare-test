@@ -7,6 +7,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// VersionJSON holds the release-please "manifest" JSON (a map of component
+// path to version, keyed "." for the root component). main.go populates it
+// from a //go:embed'd version.json before calling Execute; it's a package
+// var here so main.go can inject it without an import cycle.
 var VersionJSON []byte
 
 var versionCmd = &cobra.Command{

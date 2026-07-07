@@ -1,10 +1,10 @@
 package cmd
 
 import (
+	"github.com/itzemoji/aeroflare/internal/oci"
 	"fmt"
 	"os"
 
-	network "aeroflare/src"
 	"github.com/spf13/cobra"
 )
 
@@ -13,9 +13,9 @@ var pushBlobCmd = &cobra.Command{
 	Short: "Push a blob to the registry",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		registry, repository := network.GetRegistryAndRepository()
+		registry, repository := oci.GetRegistryAndRepository()
 
-		ociToken := network.GetToken(registry, repository, "")
+		ociToken := oci.GetToken(registry, repository, "")
 		if ociToken == "" {
 			PrintError("oci_token, GITHUB_TOKEN or GH_TOKEN environment variable is required")
 			os.Exit(1)
@@ -24,7 +24,7 @@ var pushBlobCmd = &cobra.Command{
 		filePath := args[0]
 		PrintInfo(fmt.Sprintf("Pushing blob: %s", filePath))
 
-		digest, err := network.PushBlob(filePath, registry, repository, ociToken)
+		digest, err := oci.PushBlob(filePath, registry, repository, ociToken)
 		if err != nil {
 			PrintError(fmt.Sprintf("Failed to push blob: %v", err))
 			os.Exit(1)
@@ -39,9 +39,9 @@ var pullBlobCmd = &cobra.Command{
 	Short: "Pull a blob from the registry",
 	Args:  cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
-		registry, repository := network.GetRegistryAndRepository()
+		registry, repository := oci.GetRegistryAndRepository()
 
-		ociToken := network.GetToken(registry, repository, "")
+		ociToken := oci.GetToken(registry, repository, "")
 		if ociToken == "" {
 			PrintError("oci_token, GITHUB_TOKEN or GH_TOKEN environment variable is required")
 			os.Exit(1)
@@ -52,7 +52,7 @@ var pullBlobCmd = &cobra.Command{
 
 		PrintInfo(fmt.Sprintf("Pulling blob %s to %s", digest, outFile))
 
-		err := network.PullBlob(digest, outFile, registry, repository, ociToken)
+		err := oci.PullBlob(digest, outFile, registry, repository, ociToken)
 		if err != nil {
 			PrintError(fmt.Sprintf("Failed to pull blob: %v", err))
 			os.Exit(1)

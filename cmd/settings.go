@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"aeroflare/src/init"
+	setup "github.com/itzemoji/aeroflare/internal/init"
+
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -33,7 +34,7 @@ var settingsCmd = &cobra.Command{
 		if theme == "" {
 			theme = "default"
 		}
-		
+
 		cloudflareToken = viper.GetString("cloudflare-api-token")
 		gitProvider = viper.GetString("git-provider")
 		if gitProvider == "" {
@@ -79,7 +80,7 @@ var settingsCmd = &cobra.Command{
 					Options(
 						huh.NewOption("GitHub Packages (ghcr.io)", "github"),
 						huh.NewOption("GitLab Registry", "gitlab"),
-						huh.NewOption("Cloudflare R2", "cloudflare"),
+						huh.NewOption("Cloudflare (Workers)", "cloudflare"),
 						huh.NewOption("Custom OCI Registry", "custom"),
 						huh.NewOption("None", "none"),
 					).

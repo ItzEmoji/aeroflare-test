@@ -10,9 +10,9 @@ Aeroflare bridges the Nix ecosystem and standard container registries (such as G
 
 - **Stateless Proxying**: Retains zero local binary state. Streams `.nar` blobs directly from OCI.
 - **O(1) Manifest Lookups**: Tags artifacts directly with the 32-character Nix store path hash, enabling instantaneous lookups.
-- **Interactive Provisioning**: A built-in setup wizard for GitHub, GitLab, and Cloudflare R2 bucket configuration.
+- **Interactive Provisioning**: A built-in setup wizard for GitHub, GitLab, and Cloudflare Worker deployment.
 - **Execution Wrapper**: Run builds transparently with the `run` wrapper (`aeroflare run -- nix build`).
-- **Dual-Backend Support**: Use OCI registries for heavy NAR blobs and Cloudflare R2 for fast metadata (`narinfo`).
+- **Native OCI Storage**: Each package is one OCI image tagged with its store hash — NAR blobs as layers, `narinfo` as manifest annotations. No separate metadata store.
 
 ---
 
@@ -41,16 +41,18 @@ nix run github:ItzEmoji/aeroflare -- run -- nix build .#default --print-out-path
 │   ├── root.go         # Entry point, environment bindings
 │   ├── proxy.go        # Proxy CLI command definition
 │   ├── run.go          # CLI command for build wrapper
-│   └── ...             # Settings, auth, gc, and clean-index CLI commands
-├── src/                # Core logic packages (decoupled from Cobra/CLI)
+│   └── ...             # Settings, auth, and push CLI commands
+├── internal/           # Core logic packages (decoupled from Cobra/CLI)
+│   ├── oci/            # OCI registry transport: layers, pushers, auth, retry
+│   ├── backend/        # CacheBackend abstraction + native OCI-tag implementation
 │   ├── auth/           # OAuth token flows, Device authorization
 │   ├── secrets/        # Credentials manager (keyring + plaintext fallback)
 │   ├── proxy/          # HTTP server, proxy handlers, token management
 │   ├── prepare/        # Local NAR serialization, compression, and signing
-│   ├── network.go      # OCI network layer (uses go-containerregistry)
-│   ├── index.go        # JSON cache-index schema and update logic
-│   ├── r2.go           # Cloudflare R2 / S3 client integration
-│   └── gc.go           # BFS-based garbage collection algorithm
+│   ├── push/           # Push pipeline (prepare -> backend publish)
+│   ├── run/            # `aeroflare run` build wrapper
+│   ├── init/           # Interactive provisioning wizards
+│   └── ui/             # Shared terminal UI components
 └── docs/               # Docusaurus documentation website
 ```
 

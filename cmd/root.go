@@ -1,11 +1,11 @@
 package cmd
 
 import (
+	"github.com/itzemoji/aeroflare/internal/oci"
 	"os"
 	"path/filepath"
 	"strings"
 
-	network "aeroflare/src"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -28,11 +28,15 @@ Aeroflare allows you to seamlessly cache Nix binaries into an OCI registry
 (like GitHub Packages), speeding up your CI/CD pipelines and local builds.
 Use it as a proxy cache, or push/pull blobs directly to/from the registry.`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		network.DebugLogger = (VerboseCount >= 2)
+		oci.DebugLogger = (VerboseCount >= 2)
 		cacheURL = GetCacheURL()
 	},
 }
 
+// initConfig locates (or creates) aeroflare.yaml under XDG_CONFIG_HOME (or
+// ~/.config), wires it up as the Viper config file, and sets up the
+// AEROFLARE_* environment variable prefix. Registered as a Cobra
+// OnInitialize hook, so it runs once before any command's RunE/Run.
 func initConfig() {
 	configDir := os.Getenv("XDG_CONFIG_HOME")
 	if configDir == "" {
@@ -47,7 +51,7 @@ func initConfig() {
 		configDir = filepath.Join(homeDir, ".config")
 	}
 	aeroDir := filepath.Join(configDir, "aeroflare")
-	
+
 	if err := os.MkdirAll(aeroDir, 0755); err != nil {
 		PrintError("Could not create config directory: " + err.Error())
 	} else {
@@ -57,7 +61,6 @@ func initConfig() {
 			defaultConfig := []byte(`# Aeroflare Configuration
 # theme: catppuccin
 # cache-url: oci://docker.io/my-org/my-cache
-# backend: r2
 `)
 			if err := os.WriteFile(configFile, defaultConfig, 0644); err != nil {
 				PrintError("Could not write default config file: " + err.Error())
@@ -77,6 +80,9 @@ func initConfig() {
 	}
 }
 
+// GetCacheURL resolves the effective OCI cache URL: an explicit --cache-url
+// flag wins, otherwise a shorthand --cache "org/repo" value is expanded to
+// a ghcr.io URL. Returns "" if neither is set.
 func GetCacheURL() string {
 	if url := viper.GetString("cache-url"); url != "" {
 		return url
@@ -95,20 +101,21 @@ func Execute() {
 	}
 }
 
+// GetRootCmd returns the root Cobra command, mainly for use by the docs
+// generator (cmd/gen_docs).
 func GetRootCmd() *cobra.Command {
 	return rootCmd
 }
-
 
 func init() {
 	cobra.OnInitialize(initConfig)
 	rootCmd.PersistentFlags().CountVarP(&VerboseCount, "verbose", "v", "Enable verbose output (-v for packages, -vv for requests)")
 	rootCmd.PersistentFlags().StringVar(&cacheURL, "cache-url", "", "OCI registry URL for the cache")
-	
+
 	rootCmd.PersistentFlags().StringVar(&globalGithubToken, "github-token", "", "GitHub Token")
 	rootCmd.PersistentFlags().StringVar(&globalGitlabToken, "gitlab-token", "", "GitLab Token")
 	rootCmd.PersistentFlags().StringVar(&globalCfToken, "cf-token", "", "Cloudflare API Token")
 	rootCmd.PersistentFlags().StringVar(&globalCfUserID, "cf-user-id", "", "Cloudflare Account ID")
-	
+
 	_ = viper.BindPFlag("cache-url", rootCmd.PersistentFlags().Lookup("cache-url"))
 }

@@ -1,11 +1,15 @@
 ---
 sidebar_position: 1
-title: Configuring Storage Backends
+title: Configuring Storage
 ---
 
-# Configuring Storage Backends
+# Configuring Storage
 
-Aeroflare supports two primary types of storage backends for your Nix binaries: **OCI Registries** (like GitHub Container Registry) and **Cloudflare R2** buckets.
+Aeroflare stores your Nix binaries in an **OCI Registry** (such as GitHub
+Container Registry). Each Nix package is published as its own OCI image, tagged
+with its store hash, and its `.narinfo` metadata is carried in the image's
+annotations. This "native OCI" layout is fully stateless: there is no central
+index to maintain, and lookups resolve directly to a single manifest request.
 
 ## Initial Setup
 To provision resources and configure a cache for the first time, run the interactive onboarding wizard:
@@ -15,22 +19,21 @@ nix run github:ItzEmoji/aeroflare -- init
 
 ---
 
-## Configuring or Changing the Backend
+## Configuring an Existing Cache
 
-To change the storage backend (index type) or the Nix public signing key for an existing cache, use the `configure` command:
+To change the Nix public signing key for an existing cache, use the `configure`
+command:
 ```bash
 nix run github:ItzEmoji/aeroflare -- configure
 ```
-This updates the cache metadata (OCI manifest annotations) directly in the registry. You will be prompted to choose:
-- **Cloudflare R2 (Recommended)**: Best performance, dual-backend support.
-- **Native OCI Tags (Experimental)**: Fully stateless OCI indexing.
-- **cache-index.json (Not Recommended)**: Traditional single-file index.
+This updates the cache metadata (OCI manifest annotations) directly in the registry.
 
 ---
 
 ## Client Settings and Credentials
 
-To configure registry logins and R2 tokens on your local machine, you can use the interactive authentication commands or environment variables.
+To configure registry logins on your local machine, you can use the interactive
+authentication commands or environment variables.
 
 ### Interactive CLI Authentication
 Run the login command to configure credentials interactively:
@@ -54,8 +57,3 @@ Alternatively, you can configure credentials directly via environment variables:
 | `GITLAB_TOKEN` | Authentication token for GitLab Registry |
 | `CLOUDFLARE_API_TOKEN` | Cloudflare API token |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare Account ID |
-| `R2_BUCKET` | Cloudflare R2 bucket name |
-| `R2_ENDPOINT` | Cloudflare R2 S3 API Endpoint |
-| `R2_ACCESS_KEY_ID` | Cloudflare R2 Access Key ID |
-| `R2_SECRET_ACCESS_KEY` | Cloudflare R2 Secret Access Key |
-| `R2_PUBLIC_URL` | Cloudflare R2 Public bucket URL (e.g., `https://pub-xxx.r2.dev`) |

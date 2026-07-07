@@ -5,7 +5,7 @@ title: Cache Population
 
 # Cache Population
 
-Populating the cache involves uploading `.nar` files and `.narinfo` metadata to your remote backend (OCI registry or Cloudflare R2).
+Populating the cache involves uploading `.nar` files and `.narinfo` metadata to your OCI registry.
 
 ## Automated Push via `run`
 

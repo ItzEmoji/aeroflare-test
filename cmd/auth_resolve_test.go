@@ -79,7 +79,7 @@ func TestRequireCloudflareToken_SecretsManager(t *testing.T) {
 	t.Setenv("CLOUDFLARE_API_TOKEN", "")
 	t.Setenv("CLOUDFLARE_ACCOUNT_ID", "")
 	mock := &mockManager{data: map[string]string{
-		"cf-token": "secret-cf-token",
+		"cf-token":   "secret-cf-token",
 		"cf-user-id": "secret-cf-user",
 	}}
 	SecretsManager = mock

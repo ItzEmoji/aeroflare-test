@@ -1,13 +1,19 @@
 package cmd
 
 import (
+	"github.com/itzemoji/aeroflare/internal/auth"
 	"fmt"
-	"aeroflare/src/auth"
+
 	"github.com/charmbracelet/huh"
 )
 
+// githubClientID identifies the Aeroflare OAuth app used for the GitHub
+// device authorization flow below; it's a public client ID, not a secret.
 const githubClientID = "Ov23liIJyLpd2Cse5gne"
 
+// runInteractiveGithubAuth prompts the user to choose between the OAuth
+// device flow (opens a browser) or pasting a personal access token
+// manually, then saves whichever token results via the secrets manager.
 func runInteractiveGithubAuth() string {
 	manager := getSecretsManager()
 	var ghMethod string
@@ -33,7 +39,7 @@ func runInteractiveGithubAuth() string {
 		}
 		fmt.Printf("Please go to %s and enter the code: %s\n", res.VerificationURI, res.UserCode)
 		fmt.Println("Waiting for authorization...")
-		
+
 		token, err = auth.PollAccessToken(githubClientID, res.DeviceCode, res.Interval)
 		if err != nil {
 			PrintError(fmt.Sprintf("Authorization failed: %v", err))
@@ -45,7 +51,7 @@ func runInteractiveGithubAuth() string {
 			return ""
 		}
 	}
-	
+
 	if token != "" {
 		if err := manager.Set("github-token", token); err != nil {
 			PrintError(fmt.Sprintf("Failed to save token: %v", err))
@@ -56,6 +62,8 @@ func runInteractiveGithubAuth() string {
 	return token
 }
 
+// runInteractiveGitlabAuth prompts for a GitLab personal access token and
+// saves it via the secrets manager.
 func runInteractiveGitlabAuth() string {
 	manager := getSecretsManager()
 	var token string
@@ -73,6 +81,8 @@ func runInteractiveGitlabAuth() string {
 	return token
 }
 
+// runInteractiveCloudflareAuth prompts for a Cloudflare API token and
+// account ID and saves whichever of the two the user entered.
 func runInteractiveCloudflareAuth() (string, string) {
 	manager := getSecretsManager()
 	var apiToken, userID string
@@ -104,10 +114,13 @@ func runInteractiveCloudflareAuth() (string, string) {
 	return apiToken, userID
 }
 
+// runInteractiveOCIAuth prompts for a registry hostname (if not already
+// known) plus a username/token pair, and saves them under
+// "oci-<registry>-username" / "oci-<registry>-token".
 func runInteractiveOCIAuth(registry string) (string, string) {
 	manager := getSecretsManager()
 	var user, pass string
-	
+
 	if registry == "" {
 		err := huh.NewInput().Title("Registry URL (e.g. registry.gitlab.com)").Value(&registry).Run()
 		if err != nil || registry == "" {
@@ -117,7 +130,7 @@ func runInteractiveOCIAuth(registry string) (string, string) {
 
 	err := huh.NewForm(
 		huh.NewGroup(
-			huh.NewInput().Title("Username for " + registry).Value(&user),
+			huh.NewInput().Title("Username for "+registry).Value(&user),
 			huh.NewInput().Title("Token / Password").EchoMode(huh.EchoModePassword).Value(&pass),
 		),
 	).Run()
@@ -139,6 +152,31 @@ func runInteractiveOCIAuth(registry string) (string, string) {
 	return user, pass
 }
 
+// promptServiceFields interactively prompts for each of a service's fields,
+// masking input for secret fields, and returns the entered values keyed by
+// field Name. It is the catalog-driven prompt used by `auth set <service>`
+// when no values are given on the command line.
+func promptServiceFields(svc auth.Service) map[string]string {
+	vals := make(map[string]string)
+	for _, f := range svc.Fields {
+		var val string
+		input := huh.NewInput().Title(f.Label).Value(&val)
+		if f.Secret {
+			input = input.EchoMode(huh.EchoModePassword)
+		}
+		if err := input.Run(); err != nil {
+			return vals
+		}
+		if val != "" {
+			vals[f.Name] = val
+		}
+	}
+	return vals
+}
+
+// runInteractiveAuth is the entry point for `aeroflare auth login` when no
+// token flags were passed: it asks which service to authenticate and
+// dispatches to the matching runInteractive*Auth helper.
 func runInteractiveAuth() {
 	var service string
 	err := huh.NewSelect[string]().
@@ -151,7 +189,7 @@ func runInteractiveAuth() {
 		).
 		Value(&service).
 		Run()
-		
+
 	if err != nil {
 		PrintError("Cancelled")
 		return

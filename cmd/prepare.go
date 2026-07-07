@@ -6,19 +6,19 @@ import (
 	"os"
 	"path/filepath"
 
-	"aeroflare/src/prepare/compress"
-	"aeroflare/src/prepare/prepare"
-	"aeroflare/src/prepare/signing"
+	"github.com/itzemoji/aeroflare/internal/prepare/compress"
+	"github.com/itzemoji/aeroflare/internal/prepare/prepare"
+	"github.com/itzemoji/aeroflare/internal/prepare/signing"
 
 	"github.com/spf13/cobra"
 )
 
 var (
-	storePath   string
-	inputFile   string
-	outputDir   string
-	compression string
-	workers     int
+	storePath     string
+	inputFile     string
+	outputDir     string
+	compression   string
+	workers       int
 	prepareRefs   bool
 	signingKey    string
 	upstreamCache string
@@ -117,6 +117,9 @@ func init() {
 	rootCmd.AddCommand(prepareCmd)
 }
 
+// printResult prints a human-readable summary of one prepared store path:
+// its NAR/narinfo output locations, signing status, and any references
+// that were missing from (or newly prepared for) the upstream cache.
 func printResult(r *prepare.Result) {
 	fmt.Println("Prepared: " + r.StorePath)
 	fmt.Println("  NAR:     " + r.NarPath)

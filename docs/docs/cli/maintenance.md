@@ -6,25 +6,7 @@ sidebar_position: 4
 
 # Maintenance & Utils
 
-Aeroflare provides a suite of maintenance and utility commands designed for managing remote indexes, garbage collecting orphaned assets, interacting directly with blobs, and scaffolding local environments. These commands are critical for operators directly manipulating the cache states and for developers extending Aeroflare's core workflows.
-
-## `clean-index`
-
-The `clean-index` command completely wipes the remote cache index from the registry.
-
-**Usage:**
-```bash
-aeroflare clean-index
-```
-
-### Technical Mechanics
-
-When executed, this command requests user confirmation before proceeding. Once confirmed, it resets the upstream cache index:
-
-1. **Authentication:** Fetches credentials via `network.GetToken()` leveraging the `oci_token`, `GITHUB_TOKEN`, or `GH_TOKEN` environment variables.
-2. **Index Reset:** Constructs an empty `PushCacheIndex` containing an empty `Entries` map and an empty `GCRoots` slice.
-3. **Registry Update:** Uses `proxy.BootstrapConfigWithAnnotations` to resolve network parameters, configures R2 via `network.GetR2Config`, and executes `network.UpdateCacheIndex()` to push the empty state back to the OCI registry backend.
-
+Aeroflare provides a suite of utility commands for interacting directly with blobs and scaffolding local environments. These commands are useful for operators directly manipulating the cache states and for developers extending Aeroflare's core workflows.
 
 ## `push-blob` and `pull-blob`
 
@@ -85,5 +67,5 @@ aeroflare scaffold [flags]
 
 1. **Release Resolution:** If `--release` is not explicitly declared, the CLI invokes an interactive prompt (using `huh` UI components) after fetching available releases from the GitHub API.
 2. **Extraction:** Downloads the corresponding tarball from `github.com/ItzEmoji/aeroflare/archive/refs/tags/...` and pipes it via `exec.Command` directly into `tar -xz -C <targetDir> --strip-components=1`.
-3. **Backend Injection:** The user selects a backend mode (e.g., `Cloudflare R2`, `Native OCI Tags`, or `JSON index in OCI`). This choice dictates which subdirectory (e.g. `proxy/no-webui-r2`) is utilized.
-4. **Configuration Patching:** Executes `patchWranglerToml()`, reading `AEROFLARE_REGISTRY` / `NIXCACHE_REGISTRY` variables. It performs string substitutions on the template `wrangler.toml` file to inject runtime parameters (e.g. replacing `# NIXCACHE_REPO = "<NIXCACHE_REPO>"` and appending `[[r2_buckets]]` definitions when R2 is the chosen backend adapter).
+3. **Worker Selection:** The scaffold uses the native worker in `proxy/no-webui-native`.
+4. **Configuration Patching:** Executes `patchWranglerToml()`, reading `AEROFLARE_REGISTRY` / `NIXCACHE_REGISTRY` variables. It performs string substitutions on the template `wrangler.toml` file to inject runtime parameters (e.g. replacing `# NIXCACHE_REPO = "<NIXCACHE_REPO>"`).

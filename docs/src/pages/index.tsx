@@ -67,13 +67,13 @@ function HomepageFeatures() {
     },
     {
       badge: 'Storage',
-      title: 'Dual-Backend Support',
-      description: 'Use OCI registries for heavy NAR blobs and Cloudflare R2 for fast metadata (.narinfo).',
+      title: 'Native OCI Storage',
+      description: 'Each package is one OCI image tagged with its store hash — NAR blobs as layers, .narinfo as manifest annotations. No separate metadata store.',
     },
     {
       badge: 'Setup',
       title: 'Interactive Provisioning',
-      description: 'Built-in setup wizard for GitHub, GitLab, and Cloudflare R2 bucket configuration.',
+      description: 'Built-in setup wizard for GitHub, GitLab, and Cloudflare Worker deployment.',
     },
   ];
 

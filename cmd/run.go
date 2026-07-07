@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"os"
 
-	network "aeroflare/src"
-	"aeroflare/src/push"
-	"aeroflare/src/run"
+	"github.com/itzemoji/aeroflare/internal/oci"
+	"github.com/itzemoji/aeroflare/internal/push"
+	"github.com/itzemoji/aeroflare/internal/run"
+
 	"github.com/spf13/cobra"
 )
 
@@ -15,8 +16,7 @@ var runCmd = &cobra.Command{
 	Short: "Run a command with proxy substituter and push the output paths",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		registry, repository := network.GetRegistryAndRepository()
-		indexDir := getIndexDir(repository)
+		registry, repository := oci.GetRegistryAndRepository()
 
 		cfg := &run.RunConfig{
 			Command: args,
@@ -25,7 +25,7 @@ var runCmd = &cobra.Command{
 		run.DisplaySummary(cfg)
 
 		token := getTokenForRegistry(registry)
-		targetPaths, err := run.ExecuteCommand(cfg, registry, repository, indexDir, token)
+		targetPaths, err := run.ExecuteCommand(cfg, registry, repository, token)
 		if err != nil {
 			PrintError(err.Error())
 			os.Exit(1)
@@ -38,7 +38,8 @@ var runCmd = &cobra.Command{
 
 		fmt.Printf("\nFound %d store paths to push from run command output.\n", len(targetPaths))
 
-		// Trigger Push
+		// Feed the discovered store paths straight into the push pipeline,
+		// reusing push's own flags (registered below) for compression, workers, etc.
 		pushCfg := &push.PushConfig{
 			TargetPaths: targetPaths,
 			Compression: pushCompression,
@@ -67,7 +68,8 @@ var runCmd = &cobra.Command{
 }
 
 func init() {
-	// Re-use push flags
+	// These flags bind to the same package-level vars as pushCmd (see push.go),
+	// so `aeroflare run` and `aeroflare push` share identical push behavior.
 	runCmd.Flags().StringVar(&pushCompression, "compression", "zstd", "Compression type: zstd, xz, gzip, none")
 	runCmd.Flags().StringVar(&pushCacheURL, "upstream-cache", "https://cache.nixos.org", "Upstream binary cache URL")
 	runCmd.Flags().IntVar(&pushWorkers, "workers", 50, "Number of concurrent workers")

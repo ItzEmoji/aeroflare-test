@@ -22,22 +22,16 @@ Additionally, `cmd/root.go` binds a specific alias, `AEROFLARE_CACHE`. When this
 
 The `init` command orchestrates the `setup.RunWizard()` and `setup.RunProvision(cfg)` flow. 
 
-Crucially, before invoking the provisioner, `init.go` dynamically mutates the process environment by exporting required tokens so that underlying Terraform/Pulumi or SDK calls can authenticate:
-- If the R2 backend is selected, it exports `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+Crucially, before invoking the provisioner, `init.go` dynamically mutates the process environment by exporting required tokens so that underlying SDK calls can authenticate:
+- It always exports `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` (needed to deploy the Worker).
 - If GitHub Registry (`ghcr.io`) or GitHub Git Provider is selected, it exports `GITHUB_TOKEN`.
 
 ## aeroflare configure (`cmd/configure.go`)
 
-The `configure` command reads and writes cache backend configuration directly to OCI manifest annotations using `network.PushConfigManifest`.
+The `configure` command reads and writes cache configuration directly to OCI manifest annotations using `network.PushConfigManifest`.
 
-It manipulates the following specific OCI annotation keys:
-- `aeroflare.index-type`: The storage backend (`r2`, `native`, or `json`).
+It manipulates the following specific OCI annotation key:
 - `aeroflare.public-key`: The nix cache public key.
-- `aeroflare.r2.bucket`: The R2 bucket name.
-- `public-r2-url`: The R2 public URL (e.g., `https://pub-xxx.r2.dev`).
-- `aeroflare.r2.endpoint`: The S3 API endpoint for R2.
-
-As a cleanup mechanic, if the user migrates away from the `json` backend (e.g., changing to `r2` or `native`), the code actively issues a deletion request for the `cache-index` image tag via `network.DeleteTag()` to prevent stale JSON indexes from lingering in the registry.
 
 ## aeroflare settings (`cmd/settings.go`)
 
@@ -47,5 +41,5 @@ Depending on the user's choices in the `huh` forms, it mutates the following int
 - `theme`: UI color scheme (e.g., `catppuccin`, `gruvbox-dark`).
 - `git-provider`: Set to `github`, `gitlab`, or `none`.
 - `git-token`: Stores the corresponding GitHub or GitLab token.
-- `cloudflare-api-token`: Stores the Cloudflare token if the R2 registry is selected.
+- `cloudflare-api-token`: Stores the Cloudflare token used to deploy the Worker.
 - `cache-url`: Stores the custom OCI registry URL.
