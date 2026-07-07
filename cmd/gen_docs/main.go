@@ -10,7 +10,12 @@ import (
 )
 
 func main() {
-	outDir := "./docs-site/docs/reference/cli"
+	// Default to the Docusaurus docs tree; allow an explicit override as the
+	// first argument.
+	outDir := "./docs/docs/reference/cli"
+	if len(os.Args) > 1 && os.Args[1] != "" {
+		outDir = os.Args[1]
+	}
 
 	// Create directory if it doesn't exist
 	if err := os.MkdirAll(outDir, 0755); err != nil {
@@ -26,7 +31,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Println("Successfully generated Cobra CLI markdown documentation in docs-site/docs/reference/cli!")
+	fmt.Printf("Successfully generated Cobra CLI markdown documentation in %s!\n", outDir)
 
 	// Create _category_.json for the CLI reference directory
 	categoryJSON := `{
