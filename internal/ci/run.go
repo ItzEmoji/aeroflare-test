@@ -42,7 +42,7 @@ func Run(spec RunSpec, w io.Writer) bool {
 	totalSkipped := 0
 
 	for _, installable := range spec.Builds {
-		paths, err := BuildInstallable(installable)
+		paths, err := BuildInstallable(installable, 0)
 		if err != nil {
 			fmt.Fprintf(w, "✗ build  %s   %v\n", installable, err)
 			continue
