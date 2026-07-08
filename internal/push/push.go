@@ -43,6 +43,21 @@ type PushConfig struct {
 	Verbosity   int
 }
 
+// Target is an explicit push destination, replacing viper/env resolution.
+type Target struct {
+	Registry   string
+	Repository string
+	Token      string // raw token (e.g. GITHUB_TOKEN); exchanged internally
+}
+
+// PushResult summarizes a completed RunPushTo call.
+type PushResult struct {
+	Uploaded        int
+	SkippedUpstream int
+	Roots           int
+	Failed          []string
+}
+
 // ParseConfig gathers store paths from a positional storePath, an --input
 // file (one path per line, "#" comments ignored), and piped stdin (skipped
 // if stdin is an interactive terminal), then appends any trailing args.
@@ -133,34 +148,45 @@ func DisplaySummary(plan *PushPlan) {
 // each chunk so an interrupted push keeps whatever it already uploaded, and
 // per-path upload failures are reported at the end rather than aborting the
 // whole run (a chunk only aborts outright if every upload in it fails).
+// RunPush preserves the legacy CLI entry point: it resolves the target from
+// viper/env and renders progress with the charm UI, exactly as before.
 func RunPush(plan *PushPlan) error {
+	registry, repository := oci.GetRegistryAndRepository()
+	_, err := RunPushTo(plan, Target{Registry: registry, Repository: repository}, uiReporter{verbose: plan.Config.Verbosity >= 1})
+	return err
+}
+
+// RunPushTo executes a PushPlan against an explicit target, reporting progress
+// through reporter. See RunPush for the legacy viper/env-backed entry point.
+func RunPushTo(plan *PushPlan, target Target, reporter Reporter) (*PushResult, error) {
 	startTime := time.Now()
 	var totalUploaded int
+	var skippedUpstream int
 
-	// Fetch registry and token
-	registry, repository := oci.GetRegistryAndRepository()
-	ociToken := oci.GetToken(registry, repository, "")
+	// Resolve the registry token from the explicit target (exchanges a PAT if needed).
+	registry, repository := target.Registry, target.Repository
+	ociToken := oci.GetToken(registry, repository, target.Token)
 	if ociToken == "" {
-		return errors.New("authentication token missing (oci_token, GITHUB_TOKEN or GH_TOKEN)")
+		return nil, errors.New("authentication token missing for registry")
 	}
 
 	compType, err := compress.ParseType(plan.Config.Compression)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var signKey *signing.PrivateKey
 	if plan.Config.SigningKey != "" {
 		signKey, err = signing.LoadPrivateKey(plan.Config.SigningKey)
 		if err != nil {
-			return fmt.Errorf("error loading key: %v", err)
+			return nil, fmt.Errorf("error loading key: %v", err)
 		}
 	}
 
 	// Create a temporary directory if files should not be kept
 	outputDir, err := os.MkdirTemp("", "aeroflare-push-*")
 	if err != nil {
-		return fmt.Errorf("error creating temporary directory: %v", err)
+		return nil, fmt.Errorf("error creating temporary directory: %v", err)
 	}
 
 	if !plan.Config.KeepFiles {
@@ -207,7 +233,8 @@ func RunPush(plan *PushPlan) error {
 					basename := filepath.Base(p)
 					parts := strings.SplitN(basename, "-", 2)
 					if len(parts) >= 2 && existsMap[parts[0]] {
-						fmt.Printf("Skipping %s (already in upstream cache)\n", p)
+						reporter.SkippedUpstream(p)
+						skippedUpstream++
 						continue
 					}
 					trulyFiltered = append(trulyFiltered, p)
@@ -219,9 +246,9 @@ func RunPush(plan *PushPlan) error {
 
 	if len(filteredPaths) == 0 {
 		fmt.Println("No new paths to push.")
-		return nil
+		return &PushResult{}, nil
 	}
-	tokenMgr := proxy.NewTokenManager(registry, repository, "")
+	tokenMgr := proxy.NewTokenManager(registry, repository, target.Token)
 	_, configAnnotations, _ := proxy.BootstrapConfigWithAnnotations(ctx, nil, registry, repository, tokenMgr)
 
 	var totalReceipts []backend.PushReceipt
@@ -241,26 +268,26 @@ func RunPush(plan *PushPlan) error {
 		fmt.Printf("\n--- Processing chunk %d/%d ---\n\n", currentChunk, numChunks)
 
 		var results []*prepare.Result
-		printStep(1, 3, "Preparing (Generating NAR and narinfo files)")
+		reporter.Step(1, 3, "Preparing (Generating NAR and narinfo files)")
 
 		if len(chunk) == 1 {
 			var res *prepare.Result
 			var prepErr error
 			res, prepErr = prepare.Prepare(ctx, chunk[0], cfg)
 			if prepErr != nil {
-				return fmt.Errorf("error during preparation: %v", prepErr)
+				return nil, fmt.Errorf("error during preparation: %v", prepErr)
 			}
 			results = append(results, res)
 		} else {
 			res, prepErr := prepare.PrepareBatch(ctx, chunk, cfg)
 			if prepErr != nil {
-				return fmt.Errorf("error during batch preparation: %v", prepErr)
+				return nil, fmt.Errorf("error during batch preparation: %v", prepErr)
 			}
 			results = res
 		}
 
 		if plan.Config.Verbosity < 1 {
-			printSuccess(fmt.Sprintf("Prepared %d packages", len(results)))
+			reporter.Success(fmt.Sprintf("Prepared %d packages", len(results)))
 		}
 
 		seenPaths := make(map[string]bool)
@@ -292,11 +319,11 @@ func RunPush(plan *PushPlan) error {
 			collect(r, true)
 		}
 
-		printStep(2, 3, fmt.Sprintf("Uploading %d packages to OCI registry", len(tasks)))
+		reporter.Step(2, 3, fmt.Sprintf("Uploading %d packages to OCI registry", len(tasks)))
 
 		// Registry bearer tokens are short-lived; refresh per chunk so long
 		// pushes don't fail partway with auth errors.
-		if t := oci.GetToken(registry, repository, ""); t != "" {
+		if t := oci.GetToken(registry, repository, target.Token); t != "" {
 			ociToken = t
 		}
 
@@ -305,7 +332,7 @@ func RunPush(plan *PushPlan) error {
 		// of each repeating the /v2/ 401 challenge and token exchange.
 		pusher, repo, err := oci.NewLayerPusher(registry, repository, ociToken)
 		if err != nil {
-			return fmt.Errorf("failed to create registry pusher: %v", err)
+			return nil, fmt.Errorf("failed to create registry pusher: %v", err)
 		}
 
 		var mu sync.Mutex
@@ -358,12 +385,10 @@ func RunPush(plan *PushPlan) error {
 					return nil
 				}
 
-				pkgName := filepath.Base(r.StorePath)
-
 				mu.Lock()
 				totalUploaded++
 				if plan.Config.Verbosity >= 1 {
-					printSuccess(pkgName)
+					reporter.Uploaded(r.StorePath)
 				}
 
 				receiptsByPath[r.StorePath] = backend.PushReceipt{
@@ -381,12 +406,12 @@ func RunPush(plan *PushPlan) error {
 			})
 		}
 		if err := eg.Wait(); err != nil {
-			return err
+			return nil, err
 		}
 
 		failedPaths = append(failedPaths, chunkFailed...)
 		if len(chunkFailed) == len(tasks) && len(tasks) > 0 {
-			return fmt.Errorf("all %d uploads in chunk %d/%d failed (first: %s); aborting push", len(tasks), currentChunk, numChunks, chunkFailed[0])
+			return nil, fmt.Errorf("all %d uploads in chunk %d/%d failed (first: %s); aborting push", len(tasks), currentChunk, numChunks, chunkFailed[0])
 		}
 
 		// Only index store paths whose full closure was uploaded; a narinfo
@@ -395,7 +420,7 @@ func RunPush(plan *PushPlan) error {
 		excludedPaths = append(excludedPaths, chunkExcluded...)
 
 		if plan.Config.Verbosity < 1 {
-			printSuccess(fmt.Sprintf("%d packages uploaded", len(chunkReceipts)))
+			reporter.Success(fmt.Sprintf("%d packages uploaded", len(chunkReceipts)))
 		}
 
 		// Flush receipts per chunk so an interrupted push keeps what it
@@ -410,13 +435,13 @@ func RunPush(plan *PushPlan) error {
 				Workers:           plan.Config.Workers,
 			})
 			if err := backend.PushReceipts(ctx, chunkReceipts); err != nil {
-				return fmt.Errorf("backend push failed: %v", err)
+				return nil, fmt.Errorf("backend push failed: %v", err)
 			}
 			totalReceipts = append(totalReceipts, chunkReceipts...)
 		}
 	}
 
-	printStep(3, 3, "Cache backend updated")
+	reporter.Step(3, 3, "Cache backend updated")
 
 	duration := time.Since(startTime)
 
@@ -427,17 +452,23 @@ func RunPush(plan *PushPlan) error {
 		}
 	}
 
-	ui.PrintSummaryBox("Done", []ui.BoxField{
-		{Label: "Packages uploaded", Value: strconv.Itoa(totalUploaded)},
-		{Label: "GC roots", Value: strconv.Itoa(rootsUploaded)},
-		{Label: "Duration", Value: duration.Round(time.Millisecond).String()},
+	reporter.Summary("Done", [][2]string{
+		{"Packages uploaded", strconv.Itoa(totalUploaded)},
+		{"GC roots", strconv.Itoa(rootsUploaded)},
+		{"Duration", duration.Round(time.Millisecond).String()},
 	})
 
+	result := &PushResult{
+		Uploaded:        totalUploaded,
+		SkippedUpstream: skippedUpstream,
+		Roots:           rootsUploaded,
+		Failed:          failedPaths,
+	}
 	if len(failedPaths) > 0 {
-		return fmt.Errorf("%d upload(s) failed (%d dependent path(s) left unindexed to keep closures complete); re-run push to retry", len(failedPaths), len(excludedPaths))
+		return result, fmt.Errorf("%d upload(s) failed (%d dependent path(s) left unindexed to keep closures complete); re-run push to retry", len(failedPaths), len(excludedPaths))
 	}
 
-	return nil
+	return result, nil
 }
 
 // printStep prints a "[step/total] msg" progress line, e.g. "[2/3] Uploading...".
