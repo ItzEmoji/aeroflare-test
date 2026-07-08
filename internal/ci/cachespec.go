@@ -23,6 +23,8 @@ func ParseCacheSpec(s string) (CacheSpec, error) {
 		return CacheSpec{}, fmt.Errorf("invalid cache %q: expected <registry>;<repository>", s)
 	}
 	reg := strings.TrimSpace(parts[0])
+	reg = strings.TrimPrefix(reg, "https://")
+	reg = strings.TrimPrefix(reg, "http://")
 	repo := strings.TrimSpace(parts[1])
 	if reg == "" || repo == "" {
 		return CacheSpec{}, fmt.Errorf("invalid cache %q: registry and repository must be non-empty", s)

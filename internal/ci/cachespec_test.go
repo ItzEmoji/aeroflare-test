@@ -13,6 +13,8 @@ func TestParseCacheSpec(t *testing.T) {
 		{"docker.io;org/repo", "docker.io", "org/repo", false},
 		{"localhost:5000;foo/bar", "localhost:5000", "foo/bar", false},
 		{" ghcr.io ; itzemoji/cache ", "ghcr.io", "itzemoji/cache", false},
+		{"https://ghcr.io;itzemoji/nix-cache", "ghcr.io", "itzemoji/nix-cache", false},
+		{"http://localhost:5000;foo/bar", "localhost:5000", "foo/bar", false},
 		{"ghcr.io/itzemoji/nix-cache", "", "", true},
 		{"ghcr.io;", "", "", true},
 		{";repo", "", "", true},
