@@ -44,10 +44,16 @@ func Run(spec RunSpec, w io.Writer) bool {
 		upstreams = append(upstreams, spec.UpstreamCache)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// The proxy is a build-only substituter: it accelerates `nix build` by
+	// serving already-cached paths from the primary cache. It has no role in
+	// prepare (which reads local store paths) or push (which uploads directly to
+	// the registry), so its context is scoped to the build loop and torn down
+	// before prepare/upload. defer is a safety net for early returns; the happy
+	// path stops it explicitly after builds.
+	buildCtx, stopProxy := context.WithCancel(context.Background())
+	defer stopProxy()
 
-	port, err := proxy.StartProxy(ctx, 0, "127.0.0.1", primary.Registry, primary.Repository, upstreams, token0)
+	port, err := proxy.StartProxy(buildCtx, 0, "127.0.0.1", primary.Registry, primary.Repository, upstreams, token0)
 	if err != nil {
 		fmt.Fprintf(w, "✗ proxy: %v\n", err)
 		return false
@@ -71,6 +77,9 @@ func Run(spec RunSpec, w io.Writer) bool {
 		fmt.Fprintf(w, "✓ build   %s   (%d paths)\n", installable, len(paths))
 		union = append(union, paths...)
 	}
+	// Builds are done — tear down the proxy so it isn't serving during
+	// prepare/upload, which don't use it.
+	stopProxy()
 	union = dedupPaths(union)
 	if len(union) == 0 {
 		fmt.Fprintf(w, "\n%s\n", summaryLine(buildsTotal, buildsOK, 0, 0, 0))
