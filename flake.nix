@@ -18,7 +18,12 @@
             nativeBuildInputs = with pkgs; [
               go
               golangci-lint
-            ]; 
+              gnumake
+              gh
+              jq
+              zstd
+              shellcheck
+            ];
           };
         };
     };
