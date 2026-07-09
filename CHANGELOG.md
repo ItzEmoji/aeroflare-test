@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.9.0](https://github.com/ItzEmoji/aeroflare-test/compare/v1.8.0...v1.9.0) (2026-07-09)
+
+
+### Features
+
+* add make build/test/hash/get ([639f89c](https://github.com/ItzEmoji/aeroflare-test/commit/639f89c4933d1f2726785ead66a9b7fe0b9b6d43))
+* ci action ([d4052a9](https://github.com/ItzEmoji/aeroflare-test/commit/d4052a9f2b3541178df8faab0b3229e9b339159c))
+* **scripts:** add get.sh to fetch a verified prebuilt binary ([f81dcf0](https://github.com/ItzEmoji/aeroflare-test/commit/f81dcf0bc60cfb304f815cd096768b24eebdd5a2))
+
+
+### Bug Fixes
+
+* **nix:** build from the local tree instead of a self-referential fetch ([c95b32d](https://github.com/ItzEmoji/aeroflare-test/commit/c95b32d7ea1bafca1590a9ceb8f969fdcddaeffe))
+
 ## [1.8.0](https://github.com/ItzEmoji/aeroflare-test/compare/v1.7.0...v1.8.0) (2026-07-09)
 
 
