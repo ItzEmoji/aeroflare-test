@@ -61,3 +61,14 @@ jobs:
         run: bash scripts/test/all.sh
       - name: actionlint
         uses: raven-actions/actionlint@v2
+
+  # default.nix has no CI coverage anywhere else, and its failure mode is silent:
+  # a stale vendorHash or an eval error only surfaces when someone runs
+  # `nix build`. Gate every PR on it, release PRs included.
+  nix-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: DeterminateSystems/nix-installer-action@v20
+      - name: nix build
+        run: nix build .#default --no-link --print-build-logs
