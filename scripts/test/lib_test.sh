@@ -26,4 +26,11 @@ assert_eq "split_list trims"    $'a\nb' "$(split_list ' a , b ')"
 assert_eq "split_list drops empties" $'a\nb' "$(split_list $'a\n\n,b,')"
 assert_eq "split_list empty input" "" "$(split_list '')"
 
+# --- host_arch_label ---------------------------------------------------------
+assert_eq "host_arch_label maps x86_64"  "x86_64"  "$(host_arch_label x86_64)"
+assert_eq "host_arch_label maps aarch64" "aarch64" "$(host_arch_label aarch64)"
+assert_eq "host_arch_label maps arm64"   "aarch64" "$(host_arch_label arm64)"
+assert_fails "host_arch_label rejects riscv64" host_arch_label riscv64
+assert_fails "host_arch_label rejects empty"   host_arch_label ""
+
 report

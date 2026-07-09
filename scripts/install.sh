@@ -19,22 +19,11 @@ command -v nix >/dev/null 2>&1 \
 # version.json names the exact release to download — for @v1, @main, or a SHA.
 version=$(read_version "$GITHUB_ACTION_PATH")
 arch=$(arch_label "${RUNNER_ARCH:-}")
-tag="v$version"
-archive="aeroflare-ci-$arch.tar.zst"
 dest="$RUNNER_TEMP/aeroflare"
-mkdir -p "$dest"
 
-# --- download ---------------------------------------------------------------
-gh release download "$tag" --repo "$repo" --pattern "$archive" --dir "$dest" \
-  || die "release $tag of $repo ships no $archive; pin the action to a release that publishes assets (>= v1.8.0)"
-
-# --- verify -----------------------------------------------------------------
-gh attestation verify "$dest/$archive" --repo "$repo" \
-  || die "provenance verification failed for $archive from $tag"
-
-# --- extract ----------------------------------------------------------------
-tar --zstd -xf "$dest/$archive" -C "$dest"
-chmod +x "$dest/aeroflare-ci"
+# --- download, verify, extract ----------------------------------------------
+fetch_release_binary "$repo" "$version" aeroflare-ci "$arch" "$dest" \
+  "pin the action to a release that publishes assets (>= v1.8.0)"
 
 printf 'bin=%s\n' "$dest/aeroflare-ci" >> "$GITHUB_OUTPUT"
 printf 'aeroflare-ci %s (%s) verified and installed\n' "$version" "$arch"
