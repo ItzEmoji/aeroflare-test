@@ -87,3 +87,19 @@ jobs:
           tag_name: ${{ needs.release.outputs.tag_name }}
           files: dist/*
           fail_on_unmatched_files: true
+
+      # `uses: ItzEmoji/aeroflare@v1` needs a moving major tag. Derive the major
+      # from version.json so a future 2.x needs no edit here. Pushes made with
+      # GITHUB_TOKEN do not trigger workflows, which is what we want.
+      - name: Move the major version tag
+        env:
+          TAG: ${{ needs.release.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          version=$(jq -er '.["."]' version.json)
+          major="v${version%%.*}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f "$major" "$TAG"
+          git push -f origin "refs/tags/$major"
+          echo "moved $major -> $TAG"
