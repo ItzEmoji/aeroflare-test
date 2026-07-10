@@ -66,26 +66,22 @@ jobs:
               rm "stage/$bin"
             done
           done
-          (cd dist && sha256sum ./*.tar.zst > SHA256SUMS)
 
+      # Uploads the bundle to the attestations API, which is what backs both the
+      # release page's provenance panel and `gh attestation verify --repo`. The
+      # bundle is deliberately not also shipped as a release asset: it would be a
+      # second copy of what the API already serves.
       - name: Attest build provenance
-        id: attest
         uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/*.tar.zst
-
-      # Ship the Sigstore bundle so consumers can verify without querying the
-      # attestation API. The trusted root is deliberately not shipped: it rotates,
-      # and `gh attestation trusted-root` fetches the current one.
-      - name: Stage provenance bundle
-        run: cp "${{ steps.attest.outputs.bundle-path }}" dist/provenance.jsonl
 
       # Omitting `draft:` publishes the draft release after the upload.
       - name: Upload assets and publish release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.release.outputs.tag_name }}
-          files: dist/*
+          files: dist/*.tar.zst
           fail_on_unmatched_files: true
 
       # `uses: ItzEmoji/aeroflare@v1` needs a moving major tag. Derive the major

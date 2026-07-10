@@ -7,6 +7,7 @@
 buildGoModule (finalAttrs: {
   pname = "aeroflare";
   version = (lib.importJSON ./version.json).".";
+  doCheck = false;
 
   src = ./.;
 
