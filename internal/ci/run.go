@@ -19,6 +19,16 @@ func summaryLine(buildsTotal, buildsOK, pushesTotal, pushesOK, paths int) string
 		buildsOK, buildsTotal, pushesOK, pushesTotal, paths, status)
 }
 
+// upstreamCacheURL normalises spec.UpstreamCache for the two consumers that
+// take a URL: the proxy's substituter list and prepare's closure filter. Both
+// treat "" as "no upstream", which is also what "none" means to a user.
+func upstreamCacheURL(spec RunSpec) string {
+	if spec.UpstreamCache == "none" {
+		return ""
+	}
+	return spec.UpstreamCache
+}
+
 // Run executes the smart pipeline: start a proxy substituter at the primary cache,
 // build every installable through it, prepare the full closure once, and upload it
 // to every cache. Returns true iff every build and push succeeded.
@@ -39,9 +49,10 @@ func Run(spec RunSpec, w io.Writer) bool {
 		return false
 	}
 
+	upstream := upstreamCacheURL(spec)
 	var upstreams []string
-	if spec.UpstreamCache != "" && spec.UpstreamCache != "none" {
-		upstreams = append(upstreams, spec.UpstreamCache)
+	if upstream != "" {
+		upstreams = append(upstreams, upstream)
 	}
 
 	// The proxy is a build-only substituter: it accelerates `nix build` by
@@ -86,11 +97,14 @@ func Run(spec RunSpec, w io.Writer) bool {
 		return false
 	}
 
+	// CacheURL drives prepare's reference filter: references already on the
+	// upstream cache are neither NAR'd nor uploaded. Passing "" here would
+	// prepare and push the entire closure, glibc and all.
 	prepared, err := push.Prepare(union, push.PrepareConfig{
 		Compression: spec.Compression,
 		Workers:     spec.Workers,
 		SigningKey:  keyPath,
-		CacheURL:    "",
+		CacheURL:    upstream,
 	})
 	if err != nil {
 		fmt.Fprintf(w, "✗ prepare: %v\n", err)
@@ -99,7 +113,11 @@ func Run(spec RunSpec, w io.Writer) bool {
 	}
 	defer prepared.Cleanup()
 	pathCount := prepared.PathCount()
-	fmt.Fprintf(w, "prepare  %d store paths (full closure)\n", pathCount)
+	scope := "full closure"
+	if upstream != "" {
+		scope = fmt.Sprintf("closure minus paths on %s", upstream)
+	}
+	fmt.Fprintf(w, "prepare  %d store paths (%s)\n", pathCount, scope)
 
 	pushesTotal := len(spec.Caches)
 	pushesOK := 0
