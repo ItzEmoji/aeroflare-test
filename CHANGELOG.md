@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.1](https://github.com/ItzEmoji/aeroflare-test/compare/v1.9.0...v1.9.1) (2026-07-10)
+
+
+### Bug Fixes
+
+* upstream-cache filtering in github-action ([330fda0](https://github.com/ItzEmoji/aeroflare-test/commit/330fda063204e7d60d99dc7d4c23c37dbbb643b0))
+
 ## [1.9.0](https://github.com/ItzEmoji/aeroflare-test/compare/v1.8.0...v1.9.0) (2026-07-09)
 
 
