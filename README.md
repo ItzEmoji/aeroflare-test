@@ -33,6 +33,85 @@ nix run github:ItzEmoji/aeroflare -- run -- nix build .#default --print-out-path
 
 ---
 
+## GitHub Action
+
+Build your flake outputs and push them to an OCI cache from CI. Nix must already
+be on the runner — the action does not install it.
+
+### Configless
+
+One cache, builds listed inline:
+
+```yaml
+jobs:
+  cache:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: DeterminateSystems/nix-installer-action@v20
+      - uses: ItzEmoji/aeroflare@v1
+        with:
+          cache: ghcr.io;${{ github.repository_owner }}/nix-cache
+          builds: |
+            .#default
+            .#packages.x86_64-linux.foo
+```
+
+`ghcr.io` authenticates with the workflow's `github.token` automatically. For any
+other registry, pass `cache-token`.
+
+### With a config file
+
+Several caches, or settings you would rather keep in the repo:
+
+```yaml
+      - uses: ItzEmoji/aeroflare@v1
+        with:
+          config: .aeroflare-ci.yaml
+        env:
+          AEROFLARE_TOKEN_DOCKER_IO: ${{ secrets.DOCKERHUB_TOKEN }}
+```
+
+```yaml
+# .aeroflare-ci.yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/ItzEmoji/aeroflare/v1/schema/aeroflare-ci.schema.json
+builds:
+  - .#default
+caches:
+  - ghcr.io;itzemoji/nix-cache
+  - docker.io;myorg/nix-cache
+compression: zstd
+upstream-cache: https://cache.nixos.org
+```
+
+Every build is pushed to every cache. `config` cannot be combined with `builds`
+or `cache` — an inline list replaces the file's list, so the action rejects the
+ambiguity rather than silently discarding your config.
+
+In config mode each registry's push token comes from a job-level environment
+variable named `AEROFLARE_TOKEN_<HOST>`, where `<HOST>` is the registry
+uppercased with `.` and `:` replaced by `_`.
+
+### Requirements
+
+- Linux runners only (`x86_64` or `aarch64`).
+- Pin to `v1.8.0` or later. Earlier releases ship no binaries, and the action
+  will tell you so.
+
+### Verifying the binaries yourself
+
+Every release archive carries SLSA build provenance, which the action checks on
+every run. To check by hand:
+
+```bash
+gh attestation verify aeroflare-ci-x86_64.tar.zst --repo ItzEmoji/aeroflare
+```
+
+---
+
 ## Codebase Directory Map
 
 ```
