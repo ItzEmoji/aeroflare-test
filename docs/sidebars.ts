@@ -20,6 +20,8 @@ const sidebars: SidebarsConfig = {
         'how-to/running-proxy',
         'how-to/cache-population',
         'how-to/authentication',
+        'how-to/github-action',
+        'how-to/ci-integration',
       ],
     },
     {
@@ -41,7 +43,6 @@ const sidebars: SidebarsConfig = {
             'reference/cli/aeroflare_proxy',
             'reference/cli/aeroflare_run',
             'reference/cli/aeroflare_push',
-            'reference/cli/aeroflare_scaffold',
             'reference/cli/aeroflare_prepare',
             'reference/cli/aeroflare_push-blob',
             'reference/cli/aeroflare_pull-blob',
@@ -56,6 +57,7 @@ const sidebars: SidebarsConfig = {
           ],
         },
         'reference/configuration',
+        'reference/ci-configuration',
         'reference/repository-layout',
         {
           type: 'category',
@@ -75,6 +77,8 @@ const sidebars: SidebarsConfig = {
       items: [
         'explanation/architecture',
         'explanation/oci-integration',
+        'explanation/aeroflare-ci',
+        'explanation/incremental-caching',
         'internals/architecture',
         'internals/subsystems',
         'internals/proxy-implementations',

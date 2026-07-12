@@ -43,35 +43,20 @@ jobs:
         with:
           go-version: stable
       - name: Build release binaries
-        run: |
-          set -euo pipefail
-          mkdir -p dist stage
-          for target in x86_64:amd64 aarch64:arm64; do
-            label="${target%%:*}"
-            goarch="${target##*:}"
-            for bin in aeroflare aeroflare-ci; do
-              case "$bin" in
-                aeroflare)    pkg=. ;;
-                aeroflare-ci) pkg=./cmd/aeroflare-ci ;;
-              esac
-              CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" \
-                go build -trimpath -ldflags="-s -w" -o "stage/$bin" "$pkg"
-              tar --zstd -cf "dist/$bin-$label.tar.zst" -C stage "$bin"
-              rm "stage/$bin"
-            done
-          done
-          
+        env:
+          AEROFLARE_VERSION: ${{ needs.release.outputs.tag_name }}
+        run: make dist-all
       - name: Attest artifacts
         id: attest
         uses: actions/attest@v4
         with:
-          subject-path: dist/*.tar.zst
+          subject-path: out/*.tar.zst
 
       - name: Upload assets and publish release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.release.outputs.tag_name }}
-          files: dist/*
+          files: out/*
           fail_on_unmatched_files: true
 
       - name: Move the major version tag
