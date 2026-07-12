@@ -151,7 +151,14 @@ func Run(spec RunSpec, w io.Writer) bool {
 			continue
 		}
 		reporter := NewPlainReporter(w, "  ")
-		target := push.Target{Registry: c.Registry, Repository: c.Repository, Token: token}
+		target := push.Target{
+			Registry:   c.Registry,
+			Repository: c.Repository,
+			TokenSource: func() string {
+				return cmdutil.RegistryToken(c.Registry, c.Repository, token)
+			},
+			OverrideToken: cmdutil.RegistryOverrideToken(),
+		}
 		res, err := prepared.PushTo(target, reporter)
 		if err != nil {
 			_, _ = fmt.Fprintf(w, "✗ push    → %s   %v\n", c.Raw, err)
