@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.4](https://github.com/ItzEmoji/aeroflare-test/compare/v1.10.3...v1.10.4) (2026-07-12)
+
+
+### Bug Fixes
+
+* commit missing cmd/aeroflare ([c62cf4c](https://github.com/ItzEmoji/aeroflare-test/commit/c62cf4c2fe155d57f875bf740612d1d1e9d3819e))
+
 ## [1.10.3](https://github.com/ItzEmoji/aeroflare-test/compare/v1.10.2...v1.10.3) (2026-07-12)
 
 
