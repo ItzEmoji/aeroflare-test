@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.10.5](https://github.com/ItzEmoji/aeroflare-test/compare/v1.10.4...v1.10.5) (2026-07-13)
+
+
+### Bug Fixes
+
+* copy actual files. ([5df946e](https://github.com/ItzEmoji/aeroflare-test/commit/5df946e96e2ccf7b5157dd04ca90edc566ec97f5))
+* use cmdutil.RegistryToken for push target to perform token exchange ([5f1282b](https://github.com/ItzEmoji/aeroflare-test/commit/5f1282b0bbdc9270feec2ee204417dc821e4ad81))
+
 ## [1.7.0](https://github.com/ItzEmoji/aeroflare/compare/v1.6.0...v1.7.0) (2026-07-07)
 
 
