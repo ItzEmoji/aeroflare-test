@@ -18,10 +18,13 @@ const sidebars: SidebarsConfig = {
       items: [
         'how-to/configuring-backends',
         'how-to/running-proxy',
+        'how-to/docker',
         'how-to/cache-population',
         'how-to/authentication',
+        'how-to/signing-keys',
         'how-to/github-action',
         'how-to/ci-integration',
+        'how-to/troubleshooting',
       ],
     },
     {
@@ -59,16 +62,7 @@ const sidebars: SidebarsConfig = {
         'reference/configuration',
         'reference/ci-configuration',
         'reference/repository-layout',
-        {
-          type: 'category',
-          label: 'CLI Implementation Details',
-          items: [
-            'cli/core',
-            'cli/auth',
-            'cli/cache',
-            'cli/maintenance',
-          ],
-        },
+        'reference/go-api',
       ],
     },
     {
@@ -83,6 +77,23 @@ const sidebars: SidebarsConfig = {
         'internals/subsystems',
         'internals/proxy-implementations',
         'internals/tasks-ui',
+        {
+          type: 'category',
+          label: 'CLI Implementation Details',
+          items: [
+            'cli/core',
+            'cli/auth',
+            'cli/cache',
+            'cli/maintenance',
+          ],
+        },
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Contributing',
+      items: [
+        'contributing/development',
       ],
     },
   ],
