@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.8](https://github.com/ItzEmoji/aeroflare-test/compare/v1.10.7...v1.10.8) (2026-07-16)
+
+
+### Bug Fixes
+
+* Update action for image provenance attestation ([7b44bc2](https://github.com/ItzEmoji/aeroflare-test/commit/7b44bc2334efd5aff9fde958cd253247726d1005))
+
 ## [1.10.7](https://github.com/ItzEmoji/aeroflare-test/compare/v1.10.6...v1.10.7) (2026-07-16)
 
 
