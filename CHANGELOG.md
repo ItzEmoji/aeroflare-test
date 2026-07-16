@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.7](https://github.com/ItzEmoji/aeroflare-test/compare/v1.10.6...v1.10.7) (2026-07-16)
+
+
+### Bug Fixes
+
+* add correct files ([d7b3088](https://github.com/ItzEmoji/aeroflare-test/commit/d7b3088e947bb4290ecd4058d846f4bda2928fae))
+
 ## [1.8.0](https://github.com/ItzEmoji/aeroflare/compare/v1.7.0...v1.8.0) (2026-07-13)
 
 
