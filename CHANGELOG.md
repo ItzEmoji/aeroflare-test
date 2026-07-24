@@ -1,18 +1,82 @@
 # Changelog
 
-## [1.10.8](https://github.com/ItzEmoji/aeroflare-test/compare/v1.10.7...v1.10.8) (2026-07-16)
+## [1.11.0](https://github.com/ItzEmoji/aeroflare/compare/v1.10.0...v1.11.0) (2026-07-19)
+
+
+### Features
+
+* **ui:** add Dracula theme ([#40](https://github.com/ItzEmoji/aeroflare/issues/40)) ([c1bedc1](https://github.com/ItzEmoji/aeroflare/commit/c1bedc1f56d9261ea35fd7287be40e72351de075))
+
+## [1.10.0](https://github.com/ItzEmoji/aeroflare/compare/v1.9.0...v1.10.0) (2026-07-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **go:** Go importers must update to github.com/itzemoji/aeroflare/v2.
+* **auth:** the --cf-user-id flag is renamed to --cf-account-id and the Cloudflare account ID is now stored under the cf-account-id keychain key. Users who saved it under the old cf-user-id key must set it again (aeroflare auth set cloudflare <api-token> <account-id>).
+
+### Features
+
+* **proxy:** print the start line as a clickable URL ([34de8c6](https://github.com/ItzEmoji/aeroflare/commit/34de8c63f0d2925e434f3ba554ccf5a94079dfec))
+* **proxy:** resolve registry token from flag, env, then credential ([f83d947](https://github.com/ItzEmoji/aeroflare/commit/f83d9474e602ace447bc5610fd60e5c619d2cd27))
+* **push:** accept Nix installables as positional arguments ([696c556](https://github.com/ItzEmoji/aeroflare/commit/696c5565f84131fe6c123a45fb8c6380e11a8a93))
 
 
 ### Bug Fixes
 
-* Update action for image provenance attestation ([7b44bc2](https://github.com/ItzEmoji/aeroflare-test/commit/7b44bc2334efd5aff9fde958cd253247726d1005))
+* **auth:** match sentinel errors with errors.Is, not == ([634afaa](https://github.com/ItzEmoji/aeroflare/commit/634afaa23609c84a5007d5f45f756415584c46ab))
+* **configure:** detect prompt abort with errors.Is; clarify help ([b6c5d3e](https://github.com/ItzEmoji/aeroflare/commit/b6c5d3e7a5be622dd314ba7bd643aa6731968c2b))
+* general things ([ab6df7f](https://github.com/ItzEmoji/aeroflare/commit/ab6df7f6473e64ee2b5cd3e33f85bba795f0b8b7))
+* **init:** bound init's HTTP calls with a timeout ([9fa515f](https://github.com/ItzEmoji/aeroflare/commit/9fa515f53e8a532131b3da41ea5e71cfad60ca35))
+* **init:** prompt for a dedicated worker PAT on ghcr.io ([e02bd1f](https://github.com/ItzEmoji/aeroflare/commit/e02bd1ff7318a84973f08181437cbe09b16396bb))
+* **init:** surface Cloudflare deploy response parse errors ([3b8cb9f](https://github.com/ItzEmoji/aeroflare/commit/3b8cb9f6a99eecf3f0e1d3ae9adf061660dc8590))
+* **proxy:** bracket IPv6 host in the startup URL ([4ef3e6e](https://github.com/ItzEmoji/aeroflare/commit/4ef3e6e0a3958334c04e9a63264956fb1cfbb9c5))
+* **proxy:** default to port 8080 to match the Dockerfile and docs ([86ddbf5](https://github.com/ItzEmoji/aeroflare/commit/86ddbf5ca903f4c42617757535498b7feaeeccb7))
+* **secrets:** surface keychain failures instead of masking them ([07c40ce](https://github.com/ItzEmoji/aeroflare/commit/07c40cec75c28906b98b46f16f7a50b8a36ca267))
+* stop init from authenticating twice on a fresh machine ([a7f43a9](https://github.com/ItzEmoji/aeroflare/commit/a7f43a93cc2b55327ed8cafc4d224905abc964b1))
 
-## [1.10.7](https://github.com/ItzEmoji/aeroflare-test/compare/v1.10.6...v1.10.7) (2026-07-16)
+
+### Reverts
+
+* undo /v2 module migration, stay on v1 ([c21a319](https://github.com/ItzEmoji/aeroflare/commit/c21a319f617af326ddb93b489e73fe99f3e08123))
+
+
+### Miscellaneous Chores
+
+* release 1.10.0 ([#38](https://github.com/ItzEmoji/aeroflare/issues/38)) ([bff0edd](https://github.com/ItzEmoji/aeroflare/commit/bff0edd455b93a8946ef15f1e45f7ecae6391017))
+
+
+### Code Refactoring
+
+* **auth:** rename Cloudflare user-id to account-id ([0b74b20](https://github.com/ItzEmoji/aeroflare/commit/0b74b20ca84afc64231d3412166c5cd4f94352bf))
+
+
+### Build System
+
+* **go:** move module path to /v2 for the v2 release ([8b1cf28](https://github.com/ItzEmoji/aeroflare/commit/8b1cf282d541797f2535c4c4f493014e4af60021))
+
+## [1.9.0](https://github.com/ItzEmoji/aeroflare/compare/v1.8.0...v1.9.0) (2026-07-16)
+
+
+### Features
+
+* add a docker target for building the aeroflare-proxy image locally ([4d99af1](https://github.com/ItzEmoji/aeroflare/commit/4d99af15b571cc5a3f22732c7d1155572027ad34))
+* added dockerfile. ([9b4ec75](https://github.com/ItzEmoji/aeroflare/commit/9b4ec7570ce8c5e84cd20a9a68850367d103985f))
+* publish aeroflare-proxy image to ghcr.io on release ([1d7a543](https://github.com/ItzEmoji/aeroflare/commit/1d7a543d37df7b3fbfaf7023da55a86659433ce3))
+* server container ([#33](https://github.com/ItzEmoji/aeroflare/issues/33)) ([5ceb3cf](https://github.com/ItzEmoji/aeroflare/commit/5ceb3cf4d45921443cfcacfe0422214bcd039561))
 
 
 ### Bug Fixes
 
-* add correct files ([d7b3088](https://github.com/ItzEmoji/aeroflare-test/commit/d7b3088e947bb4290ecd4058d846f4bda2928fae))
+* default proxy container to listen on port 8080 ([cdd66c2](https://github.com/ItzEmoji/aeroflare/commit/cdd66c2d55979906355466dee49b953d1642cdba))
+* don't push the provenance attestation to GHCR as a visible package version ([c39ddac](https://github.com/ItzEmoji/aeroflare/commit/c39ddacd0454212b65ad30f975ae8c26db7f45fa))
+* naming conventions and migrated to Just in Dockerfile. ([e6f32c6](https://github.com/ItzEmoji/aeroflare/commit/e6f32c6ee7701826c2ef01b05145dddfd6bb2a19))
+* permissions in dockerfile. ([8b2e42e](https://github.com/ItzEmoji/aeroflare/commit/8b2e42e2cdb789b8a8de43a9358ebbf809090649))
+
+
+### Performance Improvements
+
+* cross-compile the proxy image instead of building under QEMU, attest provenance ([5a10ef7](https://github.com/ItzEmoji/aeroflare/commit/5a10ef77b413c69fbb15efe47a2ae5d37bd19326))
 
 ## [1.8.0](https://github.com/ItzEmoji/aeroflare/compare/v1.7.0...v1.8.0) (2026-07-13)
 

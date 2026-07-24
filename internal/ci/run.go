@@ -4,12 +4,19 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
+	"strconv"
 	"strings"
 
 	"github.com/itzemoji/aeroflare/pkg/prepare/cache"
 	"github.com/itzemoji/aeroflare/pkg/proxy"
 	"github.com/itzemoji/aeroflare/pkg/push"
 )
+
+// proxyHost is the loopback address the CI proxy binds to and advertises as the
+// build substituter. Formatted through net.JoinHostPort at every use so the
+// address stays valid if it ever becomes an IPv6 literal.
+const proxyHost = "127.0.0.1"
 
 // summaryLine renders the final one-line roll-up.
 func summaryLine(buildsTotal, buildsOK, pushesTotal, pushesOK, paths int) string {
@@ -36,11 +43,19 @@ func prepareScope(upstreams []string) string {
 	return "closure minus upstream"
 }
 
-// Run executes the smart pipeline: start a proxy substituter at the primary cache,
-// build every installable through it, drop the outputs and references an upstream
-// cache already serves, prepare what remains once, and upload it to every cache.
+// Run executes the smart pipeline: expand any `all` build entry into the flake's
+// discovered outputs, start a proxy substituter at the primary cache, build every
+// installable through it, drop the outputs and references an upstream cache
+// already serves, prepare what remains once, and upload it to every cache.
 // Returns true iff every build and push succeeded.
 func Run(spec RunSpec, w io.Writer) bool {
+	// Discovery first: `builds: all` has to become a concrete installable list
+	// before anything downstream counts or builds it.
+	if err := resolveDiscovery(&spec, w); err != nil {
+		_, _ = fmt.Fprintf(w, "✗ discover: %v\n", err)
+		return false
+	}
+
 	_, _ = fmt.Fprintf(w, "aeroflare-ci: %d builds, %d caches\n", len(spec.Builds), len(spec.Caches))
 
 	keyPath, cleanup, err := ResolveSigningKey(spec.SigningKey)
@@ -78,7 +93,7 @@ func Run(spec RunSpec, w io.Writer) bool {
 	buildCtx, stopProxy := context.WithCancel(context.Background())
 	defer stopProxy()
 
-	port, err := proxy.StartProxy(buildCtx, 0, "127.0.0.1", primary.Registry, primary.Repository, upstreams, auth0)
+	port, err := proxy.StartProxy(buildCtx, 0, proxyHost, primary.Registry, primary.Repository, upstreams, auth0)
 	if err != nil {
 		_, _ = fmt.Fprintf(w, "✗ proxy: %v\n", err)
 		return false
@@ -87,7 +102,7 @@ func Run(spec RunSpec, w io.Writer) bool {
 	if len(upstreams) > 0 {
 		up = strings.Join(upstreams, ", ")
 	}
-	_, _ = fmt.Fprintf(w, "proxy 127.0.0.1:%d → %s  (upstream: %s)\n\n", port, primary.Raw, up)
+	_, _ = fmt.Fprintf(w, "proxy %s → %s  (upstream: %s)\n\n", net.JoinHostPort(proxyHost, strconv.Itoa(port)), primary.Raw, up)
 
 	buildsTotal := len(spec.Builds)
 	buildsOK := 0

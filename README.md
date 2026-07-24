@@ -1,4 +1,8 @@
-# Aeroflare
+<p align="center">
+  <img src="docs/static/img/favicon.svg" alt="Aeroflare logo" width="180" />
+</p>
+
+<h1 align="center">Aeroflare</h1>
 
 > High-performance OCI-backed Nix binary cache proxy written in Go.
 
@@ -11,7 +15,7 @@ Aeroflare bridges the Nix ecosystem and standard container registries (such as G
 - **Stateless Proxying**: Retains zero local binary state. Streams `.nar` blobs directly from OCI.
 - **O(1) Manifest Lookups**: Tags artifacts directly with the 32-character Nix store path hash, enabling instantaneous lookups.
 - **Interactive Provisioning**: A built-in setup wizard for GitHub, GitLab, and Cloudflare Worker deployment.
-- **Execution Wrapper**: Run builds transparently with the `run` wrapper (`aeroflare run -- nix build`).
+- **Flexible Publishing**: Push a flake output, a `./result`, or a store path straight to the cache with `aeroflare push`, or wrap a build end-to-end with the `aeroflare run` execution wrapper.
 - **Native OCI Storage**: Each package is one OCI image tagged with its store hash — NAR blobs as layers, `narinfo` as manifest annotations. No separate metadata store.
 
 ---
@@ -23,12 +27,26 @@ Run the interactive onboarding wizard to configure credentials and provision res
 ```bash
 nix run github:ItzEmoji/aeroflare -- init
 ```
-### 3. Build & Cache
-Execute a build and automatically push the outputs:
+
+### 2. Build & Push
+Hand `push` a Nix installable — a `./result` symlink, a flake reference, or a store path — and Aeroflare builds it if needed, then uploads it straight to the cache:
+```bash
+nix run github:ItzEmoji/aeroflare -- push ./result
+nix run github:ItzEmoji/aeroflare -- push nixpkgs#hello
+```
+You can also target an exact store path with `--store-path`, or push many at once with `--input`. `push` uploads directly to the registry, so no proxy needs to be running.
+
+<details>
+<summary>Alternative: build and push in one step with <code>run</code></summary>
+
+The `run` wrapper executes your Nix command through the proxy and pushes any output paths automatically:
+
 ```bash
 nix run github:ItzEmoji/aeroflare -- run -- nix build .#default --print-out-paths
 ```
+
 *Note: The `--print-out-paths` flag is necessary for the `run` command to know which store paths were built and need to be cached.*
+</details>
 
 ---
 
@@ -69,6 +87,16 @@ jobs:
           builds: |
             .#default
             .#packages.x86_64-linux.foo
+```
+
+Or hand it `builds: all` to discover and build every `packages.<system>.*`,
+`devShells.<system>.*` and `nixosConfigurations.<host>` the flake exposes — no
+list to keep up to date as the repository grows:
+
+```yaml
+        with:
+          cache: ghcr.io;${{ github.repository_owner }}/nix-cache
+          builds: all
 ```
 
 `ghcr.io` authenticates with the workflow's `github.token` automatically; any

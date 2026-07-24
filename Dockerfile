@@ -5,11 +5,11 @@ ARG TARGETARCH
 ENV TARGETOS=$TARGETOS
 ENV TARGETARCH=$TARGETARCH
 
-RUN apk add --no-cache make git
+RUN apk add --no-cache just git
 
 WORKDIR /src
 COPY . .
-RUN make build
+RUN just build
 
 FROM alpine:latest
 
@@ -21,7 +21,6 @@ COPY --from=builder /src/out/aeroflare /usr/local/bin/aeroflare
 USER aeroflare
 
 ENV NIXCACHE_LISTEN=0.0.0.0
-ENV NIXCACHE_PORT=8080
 EXPOSE 8080
 
 ENTRYPOINT ["aeroflare"]
