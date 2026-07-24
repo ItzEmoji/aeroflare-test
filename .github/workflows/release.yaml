@@ -172,7 +172,7 @@ jobs:
         with:
           repository: ItzEmoji/nix-packages-test
           token: ${{ steps.app-token.outputs.token }}
-          path: nix-packages-test
+          path: nix-packages
 
       # nix-update evaluates the target's default.nix, which opens with
       # `{ pkgs ? import <nixpkgs> {} }`. The installer runs with
