@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.14](https://github.com/ItzEmoji/aeroflare-test/compare/v1.10.13...v1.10.14) (2026-07-24)
+
+
+### Bug Fixes
+
+* copy actual files. ([876adaf](https://github.com/ItzEmoji/aeroflare-test/commit/876adafb5835883beb50c8592f21d5640c7acb5e))
+
 ## [1.10.13](https://github.com/ItzEmoji/aeroflare-test/compare/v1.10.12...v1.10.13) (2026-07-24)
 
 
