@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 
@@ -43,11 +44,29 @@ func prepareScope(upstreams []string) string {
 	return "closure minus upstream"
 }
 
-// Run executes the smart pipeline: start a proxy substituter at the primary cache,
-// build every installable through it, drop the outputs and references an upstream
-// cache already serves, prepare what remains once, and upload it to every cache.
+// Run executes the smart pipeline: expand any sentinel build entry into concrete
+// installables — every discovered output for `all`, only those differing from the
+// base commit for `changed` — start a proxy substituter at the primary cache, build every
+// installable through it, drop the outputs and references an upstream cache
+// already serves, prepare what remains once, and upload it to every cache.
 // Returns true iff every build and push succeeded.
 func Run(spec RunSpec, w io.Writer) bool {
+	// Expansion first: `builds: all` and `builds: changed` have to become a
+	// concrete installable list before anything downstream counts or builds it.
+	baseRef := resolveBaseRef(spec.Base, os.Getenv("GITHUB_EVENT_PATH"))
+	if err := resolveBuilds(&spec, w, newDiffer(baseRef)); err != nil {
+		_, _ = fmt.Fprintf(w, "✗ resolve builds: %v\n", err)
+		return false
+	}
+
+	// Distinct from Resolve's "no builds configured": the run was configured
+	// correctly and the answer is genuinely nothing. A documentation-only commit
+	// under `builds: changed` lands here, and it is a success.
+	if len(spec.Builds) == 0 {
+		_, _ = fmt.Fprintf(w, "nothing to build\n")
+		return true
+	}
+
 	_, _ = fmt.Fprintf(w, "aeroflare-ci: %d builds, %d caches\n", len(spec.Builds), len(spec.Caches))
 
 	keyPath, cleanup, err := ResolveSigningKey(spec.SigningKey)

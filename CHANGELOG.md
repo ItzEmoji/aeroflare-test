@@ -1,39 +1,13 @@
 # Changelog
 
-## [1.10.15](https://github.com/ItzEmoji/aeroflare-test/compare/v1.10.14...v1.10.15) (2026-07-24)
+## [1.12.0](https://github.com/ItzEmoji/aeroflare/compare/v1.11.0...v1.12.0) (2026-07-24)
 
 
-### Bug Fixes
+### Features
 
-* copy actual files. ([3e3f085](https://github.com/ItzEmoji/aeroflare-test/commit/3e3f0854f42503d615e6b54b012fa663e829820e))
-
-## [1.10.14](https://github.com/ItzEmoji/aeroflare-test/compare/v1.10.13...v1.10.14) (2026-07-24)
-
-
-### Bug Fixes
-
-* copy actual files. ([876adaf](https://github.com/ItzEmoji/aeroflare-test/commit/876adafb5835883beb50c8592f21d5640c7acb5e))
-
-## [1.10.13](https://github.com/ItzEmoji/aeroflare-test/compare/v1.10.12...v1.10.13) (2026-07-24)
-
-
-### Bug Fixes
-
-* copy actual files. ([437cdbc](https://github.com/ItzEmoji/aeroflare-test/commit/437cdbcfe65fde062c2a0e57b3c0eede07c155ce))
-
-## [1.10.12](https://github.com/ItzEmoji/aeroflare-test/compare/v1.10.11...v1.10.12) (2026-07-24)
-
-
-### Bug Fixes
-
-* copy actual files. ([299641d](https://github.com/ItzEmoji/aeroflare-test/commit/299641d005b1c2e74d88622804c33b9091c9852b))
-
-## [1.10.11](https://github.com/ItzEmoji/aeroflare-test/compare/v1.10.10...v1.10.11) (2026-07-24)
-
-
-### Bug Fixes
-
-* copy actual files. ([2ddcb43](https://github.com/ItzEmoji/aeroflare-test/commit/2ddcb4340defc12cd343b95df993e22f5d546e33))
+* **action:** make the aeroflare-ci release source configurable ([f5351ae](https://github.com/ItzEmoji/aeroflare/commit/f5351ae7896054e73329840f3b56fd845c88d33d))
+* build all ([4b2fc38](https://github.com/ItzEmoji/aeroflare/commit/4b2fc3844f50022a8fff670f510c5608379458a6))
+* **ci:** add `builds: all` to discover and build every flake output ([6d91724](https://github.com/ItzEmoji/aeroflare/commit/6d9172427291fb4cf547bf9dfad0dd963f10cdad))
 
 ## [1.11.0](https://github.com/ItzEmoji/aeroflare/compare/v1.10.0...v1.11.0) (2026-07-19)
 
