@@ -166,11 +166,11 @@ jobs:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           owner: ItzEmoji
-          repositories: nix-packages
+          repositories: nix-packages-test
 
       - uses: actions/checkout@v6
         with:
-          repository: ItzEmoji/nix-packages
+          repository: ItzEmoji/nix-packages-test
           token: ${{ steps.app-token.outputs.token }}
           path: nix-packages
 
@@ -266,4 +266,4 @@ jobs:
           PR: ${{ steps.pr.outputs.pull-request-number }}
         run: |
           set -euo pipefail
-          gh pr merge --repo ItzEmoji/nix-packages --rebase --delete-branch "$PR"
+          gh pr merge --repo ItzEmoji/nix-packages-test --rebase --delete-branch "$PR"
