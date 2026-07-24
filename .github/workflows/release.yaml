@@ -166,7 +166,7 @@ jobs:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           owner: ItzEmoji
-          repositories: nix-packages
+          repositories: nix-packages-test
 
       - uses: actions/checkout@v6
         with:
