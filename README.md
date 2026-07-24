@@ -12,7 +12,6 @@ Aeroflare bridges the Nix ecosystem and standard container registries (such as G
 
 ## Key Features
 
-### Change### Change### Change
 - **Stateless Proxying**: Retains zero local binary state. Streams `.nar` blobs directly from OCI.
 - **O(1) Manifest Lookups**: Tags artifacts directly with the 32-character Nix store path hash, enabling instantaneous lookups.
 - **Interactive Provisioning**: A built-in setup wizard for GitHub, GitLab, and Cloudflare Worker deployment.
